@@ -17,13 +17,68 @@ English speaker learning Mandarin. Phases 0 and 1 are built and tested.
 | 1 | Bayesian ability model + uncertainty-aware selector | done |
 | 1 | Balance loop proved by simulation | done, 11 checks pass |
 | 5 | Model bake-off | done — `google/gemini-3.5-flash-lite` |
-| 2 | Extension shell | not started |
-| 3 | Live text on real pages | not started |
-| 4 | Engine joined to the model | not started |
+| 2 | Extension shell — worker, content script, options, popup | done |
+| 3 | Live text on real pages | done, needs testing in Chrome |
+| 4 | Engine joined to the model | done, verified end to end |
 
 ---
 
-## Try it now
+## Load it in Chrome
+
+```bash
+npm install
+```
+
+```bash
+npm run build
+```
+
+Then in Chrome:
+
+1. Go to `chrome://extensions` and switch on **Developer mode**.
+2. **Load unpacked**, and choose the `dist` folder.
+3. Open Eclipse's **Settings** and paste your Hack Club API key. Set your HSK level.
+4. Open an ordinary article — Wikipedia is a good first try.
+5. Click the Eclipse toolbar button and **Turn on for this site**.
+6. Mandarin words appear. Click one, type what you think it means, press enter.
+
+`npm run watch` rebuilds on save. Chrome still needs the reload button on the
+extensions page to pick up a change.
+
+**It is off on every site until you switch it on**, and it refuses outright on
+banking, email, health and sign-in pages. That refusal is not a setting.
+
+### Changing how much Mandarin you get
+
+**Settings → How much Mandarin per screen.** Gentle, Normal or Intense.
+
+| | most of a sentence swapped | unfamiliar words per screen |
+|---|---|---|
+| Gentle | 25% | 1 |
+| Normal | 60% | 2 |
+| Intense | 80% | 3 |
+
+It is a **ceiling, not a target**. The balance loop still works out how much
+this particular page can carry and stays under your choice. There is no way to
+ask for an exact number of words, and that is deliberate: how many a page can
+carry depends on how many of them you happen to know, which changes page by
+page and week by week.
+
+Two hard limits ignore the setting entirely — 85% density and 3 unfamiliar
+words. Past those it stops being reading.
+
+To change the presets themselves, edit `INTENSITY` in
+`src/engine/balance.ts`. To change how much page is processed per request,
+edit `visibleTextNodes(12)` in `src/content/index.ts`.
+
+### What one screen costs
+
+Measured end to end with `npx tsx scripts/smoke.ts`: five sentences, six words
+swapped, **2.0 seconds and $0.00115**.
+
+---
+
+## Try the engine on its own
 
 Nothing here needs a browser or a network.
 
@@ -216,6 +271,37 @@ The Brier score is the check that matters for a model that reports
 probabilities. A sensible-looking point estimate proves nothing; what matters
 is whether "85%" happens 85% of the time.
 
+### Is the Bayesian model actually better? Not measurably.
+
+`npm run ablate` runs three versions against identical learners on identical
+seeds, changing only how much of the ability model is switched on.
+
+| variant | accuracy | swing | Brier | level error | recovery |
+|---|---|---|---|---|---|
+| A point estimate (the older design) | 0.852 | 0.202 | 0.142 | **0.236** | **6.1** |
+| B uncertainty tracked, not used | 0.839 | 0.250 | 0.154 | 0.622 | 6.5 |
+| C uncertainty used to seek information | **0.862** | 0.209 | **0.133** | 0.395 | 11.0 |
+
+Two things here are real. **B is worse than both** — tracking uncertainty
+without using it to choose questions is strictly harmful. And **A finds the
+level more precisely and recovers about twice as fast**, because exploring
+means asking questions whose answers you cannot predict, which by definition
+pulls accuracy away from the target.
+
+Everything else is noise. Sweeping the exploration budget gave 0.862, then
+0.849, then 0.868 — no trend. A page yields only three to six answers, so
+per-page accuracy is quantised and eight seeds cannot separate these.
+
+So the Bayesian version is kept for reasons the simulation cannot test, not
+because it wins on the numbers:
+
+- it needs no invented starting level for someone it has never met
+- it loosens its belief over a gap, so returning after a month is handled
+- it can report a range instead of a false precision
+
+Anyone claiming it is the better system on this evidence would be overstating
+it. The level-accuracy regression is a real open cost.
+
 ---
 
 ## Decisions that changed during the build
@@ -302,10 +388,18 @@ bench/
   simulate.ts              the proof that the balance loop works
   tune.ts                  searches for dial settings
   run.ts                   the model bake-off
+  ablate.ts                does the Bayesian machinery earn its place?
 scripts/
   probe.ts                 Phase 0 questions about Hack Club AI
   latency.ts               what actually makes a request slow
+  smoke.ts                 the whole pipeline end to end, without Chrome
   key.ts                   finds your API key
+src/content/
+  index.ts                 finds text, asks the worker, draws the result
+  eclipse-word.ts          one swapped word and its answer box
+src/options/  src/popup/   settings and the toolbar panel
+public/manifest.json       Manifest V3
+build.mjs                  esbuild; `npm run build` -> dist/
 ```
 
 ---

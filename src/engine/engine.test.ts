@@ -8,6 +8,9 @@ import {
   updateDials,
   newWordsAllowed,
   targetKnown,
+  limitsFor,
+  INTENSITY,
+  type Dials,
   DEFAULT_TUNING,
   TARGET_ACCURACY,
 } from "./balance.js";
@@ -287,6 +290,34 @@ describe("balance", () => {
     const hard = targetKnown({ density: 0.6, newBudget: 2 });
     expect(easy).toBeGreaterThan(hard);
     expect(hard).toBeGreaterThan(0.5);
+  });
+
+  it("obeys a ceiling the reader sets, however well they do", () => {
+    // Gentle means gentle. Twenty perfect pages must not push it past the cap.
+    let d = { density: 0.3, newBudget: 1, ...limitsFor("gentle") };
+    for (let i = 0; i < 40; i++) d = updateDials(d, { answered: 10, correct: 10 });
+
+    expect(d.density).toBeLessThanOrEqual(INTENSITY.gentle.maxDensity + 1e-9);
+    expect(newWordsAllowed(d)).toBeLessThanOrEqual(INTENSITY.gentle.maxNew);
+
+    // And the ceiling must survive being passed through the loop, or it would
+    // quietly go back to the default on the second page.
+    expect(d.maxDensity).toBe(INTENSITY.gentle.maxDensity);
+  });
+
+  it("still balances underneath the ceiling rather than pinning to it", () => {
+    // A struggling reader on "intense" must still get an easier page.
+    let d = { density: 0.7, newBudget: 3, ...limitsFor("intense") };
+    for (let i = 0; i < 10; i++) d = updateDials(d, { answered: 10, correct: 3 });
+    expect(d.density).toBeLessThan(0.7);
+  });
+
+  it("keeps the reader's choice inside limits the design can defend", () => {
+    // Even "intense" cannot turn the page fully Mandarin.
+    let d: Dials = { density: 0.5, newBudget: 2, maxDensity: 5, maxNew: 99 };
+    for (let i = 0; i < 60; i++) d = updateDials(d, { answered: 10, correct: 10 });
+    expect(d.density).toBeLessThanOrEqual(0.85);
+    expect(newWordsAllowed(d)).toBeLessThanOrEqual(3);
   });
 
   it("never drops to zero swaps", () => {

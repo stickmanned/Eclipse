@@ -67,6 +67,8 @@ const MAX_STEP = 0.08;
 /** Fraction of a sentence we are willing to swap. */
 const MIN_DENSITY = 0.05;
 const MAX_DENSITY = 0.6;
+/** Nothing the reader chooses may go past this. A fully Mandarin page is not reading. */
+const MAX_DENSITY_HARD = 0.85;
 
 /**
  * Never show more than two words the learner has never seen, on one screen.
@@ -77,6 +79,8 @@ const MAX_DENSITY = 0.6;
  * it feel like reading instead of studying.
  */
 const MAX_NEW = 2;
+/** Nor past this, however keen they are. */
+const MAX_NEW_HARD = 3;
 
 /** A brand new word is a big event, so this dial climbs in small steps. */
 const NEW_CLIMB_CAP = 0.34;
@@ -86,7 +90,55 @@ const NEW_FALL_CAP = 1.0;
 export interface Dials {
   density: number;
   newBudget: number;
+
+  /**
+   * Ceilings the reader has chosen. The balance loop still does all the work;
+   * it just does it under a lower roof.
+   *
+   * This is deliberately a limit and not an override. Setting the number of
+   * words directly would break the whole idea: Eclipse cannot know how many
+   * words *this* page can carry, because that depends on how many of them the
+   * reader happens to know. A ceiling says "never more than this", and the
+   * loop still finds the right amount underneath.
+   */
+  maxDensity?: number;
+  maxNew?: number;
 }
+
+/**
+ * How strong the reader wants it, in plain terms.
+ *
+ * `normal` is the tuned default and what every measurement in bench/ was taken
+ * against. The other two are honest trade-offs, not better settings.
+ */
+export type Intensity = "gentle" | "normal" | "intense";
+
+export const INTENSITY: Record<Intensity, { maxDensity: number; maxNew: number; label: string }> = {
+  gentle: {
+    maxDensity: 0.25,
+    maxNew: 1,
+    label: "A few words a screen. Barely interrupts reading.",
+  },
+  normal: {
+    maxDensity: MAX_DENSITY,
+    maxNew: MAX_NEW,
+    label: "The tuned default. Never more than two unfamiliar words at once.",
+  },
+  intense: {
+    maxDensity: 0.8,
+    maxNew: 3,
+    // Worth saying out loud: this goes past the cap the design argues for.
+    label: "Much more Mandarin, and up to three unfamiliar words. Tiring.",
+  },
+};
+
+export function limitsFor(intensity: Intensity): Pick<Dials, "maxDensity" | "maxNew"> {
+  const { maxDensity, maxNew } = INTENSITY[intensity] ?? INTENSITY.normal;
+  return { maxDensity, maxNew };
+}
+
+const densityCeiling = (d: Dials) => Math.min(MAX_DENSITY_HARD, d.maxDensity ?? MAX_DENSITY);
+const newCeiling = (d: Dials) => Math.min(MAX_NEW_HARD, d.maxNew ?? MAX_NEW);
 
 export interface BatchResult {
   /** How many blanks the learner filled in. */
@@ -145,13 +197,14 @@ export function updateDials(dials: Dials, batch: BatchResult, tuning = DEFAULT_T
   const gain = (struggling ? tuning.fall : tuning.climb) * confidence;
 
   const move = clamp(gain * error, -tuning.maxStep, tuning.maxStep);
-  const density = clamp(dials.density + move, MIN_DENSITY, MAX_DENSITY);
+  const density = clamp(dials.density + move, MIN_DENSITY, densityCeiling(dials));
 
   // The new-word dial moves on the same signal but on a much shorter leash.
   const step = clamp((gain * error) / 4, -NEW_FALL_CAP, NEW_CLIMB_CAP);
-  const newBudget = clamp(dials.newBudget + step, 0, MAX_NEW);
+  const newBudget = clamp(dials.newBudget + step, 0, newCeiling(dials));
 
-  return { density, newBudget };
+  // Carry the reader's ceilings through, so the next round still sees them.
+  return { density, newBudget, maxDensity: dials.maxDensity, maxNew: dials.maxNew };
 }
 
 /**
@@ -159,7 +212,7 @@ export function updateDials(dials: Dials, batch: BatchResult, tuning = DEFAULT_T
  * The dial is a smooth number so it can drift; the answer must be whole words.
  */
 export function newWordsAllowed(dials: Dials): number {
-  return Math.floor(dials.newBudget);
+  return Math.min(Math.floor(dials.newBudget), newCeiling(dials));
 }
 
 /**
@@ -178,7 +231,8 @@ export function newWordsAllowed(dials: Dials): number {
  * correction runs out of room, you use the other.
  */
 export function targetKnown(dials: Dials): number {
-  const saturation = (dials.density - MIN_DENSITY) / (MAX_DENSITY - MIN_DENSITY);
+  const ceiling = densityCeiling(dials);
+  const saturation = (dials.density - MIN_DENSITY) / Math.max(0.01, ceiling - MIN_DENSITY);
   return 0.95 - 0.3 * Math.min(1, Math.max(0, saturation));
 }
 

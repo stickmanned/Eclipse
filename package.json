@@ -11,7 +11,11 @@
     "tune": "tsx bench/tune.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "ablate": "tsx bench/ablate.ts",
+    "smoke": "tsx scripts/smoke.ts"
   },
   "dependencies": {
     "ts-fsrs": "^4.7.1"
@@ -19,6 +23,7 @@
   "devDependencies": {
     "@types/chrome": "^0.0.287",
     "@types/node": "^22.10.2",
+    "esbuild": "^0.28.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

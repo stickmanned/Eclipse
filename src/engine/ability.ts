@@ -73,7 +73,7 @@ export const SETTLED_SIGMA = 0.7;
  * not sitting an exam. A page tuned purely for information would be a page of
  * coin flips, which is miserable. So flow always keeps at least half the vote.
  */
-const MAX_EXPLORATION = 0.5;
+export const MAX_EXPLORATION = 0.5;
 
 const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
 
@@ -88,6 +88,16 @@ export function rankOf(difficulty: number): number {
 }
 
 export class Ability {
+  /**
+   * Switches used only by bench/ablate.ts, to measure whether the parts of
+   * this model actually earn their place. Production never sets them.
+   */
+  exploreEnabled = true;
+  /** Pin uncertainty, to imitate a model that does not track it at all. */
+  frozenSigma: number | undefined = undefined;
+  /** How much of the vote information-seeking may take. */
+  exploreCap = MAX_EXPLORATION;
+
   constructor(
     public mu = PRIOR_MU,
     public sigma = PRIOR_SIGMA,
@@ -126,6 +136,11 @@ export class Ability {
    * at the peak. It is a few lines and it is exact enough at this scale.
    */
   observe(b: number, correct: boolean): void {
+    // The update uses the probability averaged over our uncertainty, which is
+    // the standard form. Using the undamped probability at our best guess was
+    // tried instead — it is theoretically tempting, since a large sigma makes
+    // an easy word look like a coin flip — but measured across eight learners
+    // it made calibration worse, not better. The theory lost to the data.
     const p = this.pCorrect(b);
     const y = correct ? 1 : 0;
 
@@ -139,19 +154,20 @@ export class Ability {
     // what makes the system notice when someone's level has really changed.
     if (Math.abs(y - p) > SURPRISE_THRESHOLD) variance += SURPRISE_NOISE;
 
-    this.sigma = clampSigma(Math.sqrt(variance));
+    this.sigma = this.frozenSigma ?? clampSigma(Math.sqrt(variance));
   }
 
   /** Time passed without us watching. Let the belief loosen. */
   drift(days: number): void {
-    if (days <= 0) return;
+    if (days <= 0 || this.frozenSigma !== undefined) return;
     const variance = this.sigma * this.sigma + DRIFT_PER_DAY * days;
     this.sigma = clampSigma(Math.sqrt(variance));
   }
 
   /** How much should we be exploring rather than settling into a comfortable page? */
   explorationWeight(): number {
-    return MAX_EXPLORATION * (this.sigma / (this.sigma + SETTLED_SIGMA));
+    if (!this.exploreEnabled) return 0;
+    return this.exploreCap * (this.sigma / (this.sigma + SETTLED_SIGMA));
   }
 
   /** The rank where this learner has a coin flip chance. For the popup. */
@@ -165,7 +181,11 @@ export class Ability {
   }
 
   clone(): Ability {
-    return new Ability(this.mu, this.sigma);
+    const c = new Ability(this.mu, this.sigma);
+    c.exploreEnabled = this.exploreEnabled;
+    c.frozenSigma = this.frozenSigma;
+    c.exploreCap = this.exploreCap;
+    return c;
   }
 }
 
