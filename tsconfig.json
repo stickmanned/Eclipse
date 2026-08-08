@@ -1,0 +1,23 @@
+{
+  "extends": "./.wxt/tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "verbatimModuleSyntax": true,
+    "jsx": "react-jsx"
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "server/**/*.ts",
+    "tests/**/*.ts",
+    "tests/**/*.tsx",
+    "*.ts",
+    ".wxt/wxt.d.ts"
+  ],
+  "exclude": ["node_modules", ".output", "demo"]
+}

@@ -1,0 +1,55 @@
+{
+  "name": "eclipse-context-traps",
+  "displayName": "Eclipse — Context Traps",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Eclipse turns any English article into a French context exercise. It hides the familiar meaning, asks you to infer the truth from context, and reveals the evidence behind the answer.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "postinstall": "wxt prepare",
+    "demo": "node demo/server.mjs",
+    "api": "tsx server/index.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "npm run build && npm run build:e2e && playwright test",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test && npm run build",
+    "build:e2e": "ECLIPSE_E2E=true wxt build"
+  },
+  "dependencies": {
+    "@google/genai": "2.16.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@types/express": "5.0.6",
+    "@types/node": "24.13.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@types/supertest": "6.0.3",
+    "@wxt-dev/module-react": "1.2.2",
+    "eslint": "9.39.5",
+    "eslint-config-prettier": "10.1.8",
+    "express": "5.2.1",
+    "happy-dom": "20.11.2",
+    "prettier": "3.9.6",
+    "supertest": "7.2.2",
+    "tsx": "4.23.11",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.66.0",
+    "vitest": "4.1.10",
+    "wxt": "0.21.3"
+  }
+}

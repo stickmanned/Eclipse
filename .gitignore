@@ -1,0 +1,32 @@
+node_modules/
+.output/
+.output-e2e/
+.wxt/
+stats.html
+stats-*.json
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
+# Environment — never commit real keys
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
+
+.docs/DEVELOPMENT_PLAN_HISTORY.md

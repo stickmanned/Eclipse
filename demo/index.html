@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Eclipse demo pages</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #0b1020;
+        color: #f8fafc;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+      }
+      main {
+        max-width: 520px;
+        padding: 32px;
+      }
+      h1 {
+        color: #f7c948;
+        margin: 0 0 8px;
+      }
+      p {
+        color: #c7cedb;
+        line-height: 1.6;
+      }
+      ul {
+        list-style: none;
+        padding: 0;
+      }
+      li {
+        margin: 12px 0;
+      }
+      a {
+        display: block;
+        padding: 14px 16px;
+        border: 1px solid #2a3350;
+        border-radius: 12px;
+        color: #f8fafc;
+        text-decoration: none;
+      }
+      a:hover {
+        border-color: #8b5cf6;
+      }
+      small {
+        color: #c7cedb;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Eclipse demo</h1>
+      <p>
+        Two deterministic English articles. Start Eclipse on Demo A, answer
+        <em>attendre</em> incorrectly, then start Eclipse on Demo B to see the concept come back
+        first.
+      </p>
+      <ul>
+        <li>
+          <a href="/demo-a.html">Demo A — The Slow Return of the Night Train</a>
+          <small>Uses an &lt;article&gt; element. Contains the first <em>attendre</em>.</small>
+        </li>
+        <li>
+          <a href="/demo-b.html">Demo B — Rebuilding the Riverside Library</a>
+          <small>Uses a &lt;main&gt; element. Contains a second eligible <em>attendre</em>.</small>
+        </li>
+        <li>
+          <a href="/no-traps.html">Demo C — An article with nothing to teach</a>
+          <small>Long enough to be an article, but matches no catalog concept.</small>
+        </li>
+      </ul>
+    </main>
+  </body>
+</html>
