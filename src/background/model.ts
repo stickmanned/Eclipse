@@ -5,13 +5,7 @@
  * scripts/latency.ts and bench/run.ts. The notes say which.
  */
 
-import {
-  SYSTEM_PROMPT,
-  REPLY_SCHEMA,
-  userMessage,
-  type SwapReply,
-  type SwapRequest,
-} from "./prompt.js";
+import { SYSTEM_PROMPT, userMessage, parseReply, type SwapReply, type SwapRequest } from "./prompt.js";
 import { checkReply } from "./validate.js";
 
 const BASE = "https://ai.hackclub.com/proxy/v1";
@@ -34,15 +28,13 @@ export interface ModelResult {
   error?: string;
 }
 
-export async function rewrite(
-  key: string,
-  requests: SwapRequest[],
-  model = DEFAULT_MODEL,
-): Promise<ModelResult> {
-  const started = Date.now();
-  const out: ModelResult = { replies: new Map(), ms: 0, cost: 0 };
-  if (requests.length === 0) return out;
+interface OneResult {
+  reply?: SwapReply;
+  cost: number;
+  error?: string;
+}
 
+async function rewriteOne(key: string, request: SwapRequest, model: string): Promise<OneResult> {
   let res: Response;
   try {
     res = await fetch(`${BASE}/chat/completions`, {
@@ -52,77 +44,86 @@ export async function rewrite(
         model,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userMessage(requests) },
+          { role: "user", content: userMessage(request) },
         ],
         temperature: 0.2,
-        max_tokens: 4000,
 
-        // Measured: this alone took a request from 1423ms to 729ms. Hack Club
-        // is an OpenRouter proxy, which is not documented anywhere, but it
-        // means OpenRouter's routing options work.
+        // frequency_penalty helps with garden-variety repetition in normal
+        // decoding. It does NOT fix the schema-locked repetition loop this
+        // codebase used to hit — that is why we don't force a schema in the
+        // first place. See the comment on SYSTEM_PROMPT in prompt.ts.
+        frequency_penalty: 0.4,
+
+        // One sentence in, one sentence out. Generous but bounded.
+        max_tokens: Math.min(1000, request.text.length * 2 + 200),
+
         provider: { sort: "latency" },
-
-        // Also undocumented, also works. Without it we would be parsing the
-        // model's prose, which breaks in far more ways.
-        response_format: {
-          type: "json_schema",
-          json_schema: { name: "eclipse_swaps", strict: true, schema: REPLY_SCHEMA },
-        },
       }),
     });
   } catch (err) {
-    out.ms = Date.now() - started;
-    out.error = err instanceof Error ? err.message : String(err);
-    return out;
+    return { cost: 0, error: err instanceof Error ? err.message : String(err) };
   }
 
-  out.ms = Date.now() - started;
   const raw = await res.text();
-
   if (!res.ok) {
-    out.error =
-      res.status === 429
-        ? "Rate limited — 750 requests per 30 minutes. Slow down or wait."
-        : `HTTP ${res.status}. ${raw.slice(0, 120)}`;
-    return out;
+    return {
+      cost: 0,
+      error:
+        res.status === 429
+          ? "Rate limited — 750 requests per 30 minutes. Slow down or wait."
+          : `HTTP ${res.status}. ${raw.slice(0, 120)}`,
+    };
   }
 
   let body: { choices?: { message?: { content?: string } }[]; usage?: { cost?: number } };
   try {
     body = JSON.parse(raw);
   } catch {
-    out.error = "the provider did not return JSON";
-    return out;
+    return { cost: 0, error: "the provider did not return JSON" };
   }
 
-  out.cost = body.usage?.cost ?? 0;
+  const cost = body.usage?.cost ?? 0;
   const content = body.choices?.[0]?.message?.content;
-  if (!content) {
-    out.error = "the model returned nothing";
-    return out;
-  }
+  if (!content) return { cost, error: "the model returned nothing" };
 
-  let parsed: { sentences?: SwapReply[] };
-  try {
-    parsed = JSON.parse(content);
-  } catch {
-    out.error = "the model's answer was not the shape we asked for";
-    return out;
-  }
+  return { reply: parseReply(content), cost };
+}
 
-  const byIndex = new Map((parsed.sentences ?? []).map((s) => [s.i, s]));
+/**
+ * Each sentence gets its own request, in flight together rather than folded
+ * into one shared completion. Batching cost less and used less of the rate
+ * limit — see git history for that version — but this is what was asked for.
+ */
+export async function rewrite(
+  key: string,
+  requests: SwapRequest[],
+  model = DEFAULT_MODEL,
+): Promise<ModelResult> {
+  const started = Date.now();
+  const out: ModelResult = { replies: new Map(), ms: 0, cost: 0 };
+  if (requests.length === 0) return out;
 
-  for (const request of requests) {
-    const reply = byIndex.get(request.i);
-    if (!reply) continue;
+  const results = await Promise.all(requests.map((r) => rewriteOne(key, r, model)));
 
-    const checked = checkReply(request, reply);
+  for (let idx = 0; idx < requests.length; idx++) {
+    const request = requests[idx]!;
+    const result = results[idx]!;
+    out.cost += result.cost;
+
+    if (result.error) {
+      out.error = result.error;
+      continue;
+    }
+    if (!result.reply) continue;
+
+    const checked = checkReply(request, result.reply);
 
     // A sentence that fails the checks is simply left in English. The reader
     // sees a normal page and notices nothing. Showing a mangled sentence
     // instead would be worse than doing nothing at all.
-    if (checked.ok) out.replies.set(request.i, { text: reply.text, swaps: checked.swaps });
+    if (checked.ok) out.replies.set(request.i, { text: result.reply.text, swaps: checked.swaps });
   }
 
+  out.ms = Date.now() - started;
   return out;
 }

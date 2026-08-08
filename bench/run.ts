@@ -16,10 +16,9 @@ import { LearnerStore } from "../src/engine/store.js";
 import { planScreen } from "../src/engine/picker.js";
 import {
   SYSTEM_PROMPT,
-  REPLY_SCHEMA,
   buildRequests,
   userMessage,
-  type SwapReply,
+  parseReply,
   type SwapRequest,
 } from "../src/background/prompt.js";
 import { checkReply, looksWordForWord } from "../src/background/validate.js";
@@ -83,7 +82,6 @@ interface Score {
   /** Swaps actually rendered, out of those requested. */
   swapsUsed: number;
   swapsAsked: number;
-  skipped: number;
   wordForWord: number;
   problems: string[];
   samples: string[];
@@ -95,7 +93,7 @@ async function score(model: string, work: SwapRequest[]): Promise<Score> {
     model, ok: false, ms: 0, cost: 0, reasoningTokens: 0, outputTokens: 0,
     valid: 0, asked: work.length, swapsUsed: 0,
     swapsAsked: work.reduce((s, w) => s + w.replace.length, 0),
-    skipped: 0, wordForWord: 0, problems: [], samples: [],
+    wordForWord: 0, problems: [], samples: [],
   };
 
   const started = Date.now();
@@ -114,10 +112,9 @@ async function score(model: string, work: SwapRequest[]): Promise<Score> {
         // Generous. The probe showed a tight cap silently truncates, which
         // looks exactly like a format failure and hides the real cause.
         max_tokens: 4000,
-        response_format: {
-          type: "json_schema",
-          json_schema: { name: "eclipse_swaps", strict: true, schema: REPLY_SCHEMA },
-        },
+        // No response_format: forcing json_schema decoding on Gemini Flash
+        // models is a documented trigger for a token-repetition loop. See
+        // the comment on SYSTEM_PROMPT in src/background/prompt.ts.
       }),
     });
   } catch (err) {
@@ -144,14 +141,7 @@ async function score(model: string, work: SwapRequest[]): Promise<Score> {
     return { ...base, error: `empty content (finish: ${body?.choices?.[0]?.finish_reason})` };
   }
 
-  let parsed: { sentences?: SwapReply[] };
-  try {
-    parsed = JSON.parse(content);
-  } catch {
-    return { ...base, error: `content was not JSON: ${String(content).slice(0, 120)}` };
-  }
-
-  const byIndex = new Map((parsed.sentences ?? []).map((s) => [s.i, s]));
+  const byIndex = new Map(parseReply(content).map((s) => [s.i, s]));
 
   for (const request of work) {
     const reply = byIndex.get(request.i);
@@ -161,7 +151,6 @@ async function score(model: string, work: SwapRequest[]): Promise<Score> {
     }
 
     const checked = checkReply(request, reply);
-    base.skipped += reply.skipped?.length ?? 0;
 
     if (checked.ok) {
       base.valid++;

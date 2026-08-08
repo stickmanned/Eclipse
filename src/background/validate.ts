@@ -24,7 +24,6 @@ export function checkReply(request: SwapRequest, reply: SwapReply): Checked {
   const problems: string[] = [];
   const allowed = new Map(request.replace.map((r) => [r.zh, r.en]));
 
-  if (reply.i !== request.i) problems.push(`index ${reply.i} is not ${request.i}`);
   if (!reply.text?.trim()) problems.push("no sentence returned");
 
   const text = reply.text ?? "";
@@ -68,9 +67,28 @@ export function checkReply(request: SwapRequest, reply: SwapReply): Checked {
     problems.push(`English lost or reordered: ${missing.slice(0, 5).join(", ")}`);
   }
 
+  // Rule 6: an English word glued directly to a Mandarin word with no space
+  // reads as one broken word ("particular有") and the word-order check above
+  // cannot see it, since it only checks that English words are present, not
+  // that they are cleanly separated from the Chinese run next to them.
+  if (JAMMED_RE.test(text)) {
+    problems.push("English and Mandarin are jammed together with no space");
+  }
+
+  // A reply that runs away repeating itself ("...portion.组 the edible
+  // portion.组 the edible portion...") is a known failure mode under a forced
+  // JSON schema. The word-order check above cannot catch it: repeating a
+  // required word only adds extra matches, it never removes one.
+  if (text.length > request.text.length * MAX_GROWTH) {
+    problems.push("reply is far longer than the sentence sent, likely a repetition loop");
+  }
+
   // A reply that used nothing is not an error, but there is nothing to show.
   return { ok: problems.length === 0 && swaps.length > 0, problems, swaps };
 }
+
+const JAMMED_RE = /[A-Za-z][一-鿿]|[一-鿿][A-Za-z]/;
+const MAX_GROWTH = 3;
 
 /**
  * Does the sentence read like natural Mandarin, or like word for word
