@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Eclipse settings</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        font: 15px/1.55 system-ui, sans-serif;
+        max-width: 620px; margin: 40px auto; padding: 0 20px;
+      }
+      h1 { font-size: 22px; margin: 0 0 4px; }
+      .sub { color: #6b6b7b; margin: 0 0 28px; }
+      section { margin-bottom: 28px; }
+      label { display: block; font-weight: 600; margin-bottom: 6px; }
+      .note { color: #6b6b7b; font-size: 13px; margin-top: 6px; }
+      input[type="password"], input[type="text"], select {
+        width: 100%; box-sizing: border-box; font: inherit;
+        padding: 8px 10px; border: 1px solid #cfc9e6; border-radius: 7px;
+        background: Field; color: FieldText;
+      }
+      button {
+        font: inherit; padding: 8px 16px; border-radius: 7px;
+        border: 1px solid #6d4aff; background: #6d4aff; color: #fff; cursor: pointer;
+      }
+      button.quiet { background: transparent; color: inherit; border-color: #cfc9e6; }
+      .row { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
+      .saved { color: #0a7d3f; font-size: 13px; }
+      .warn {
+        background: color-mix(in srgb, #b3261e 8%, transparent);
+        border: 1px solid color-mix(in srgb, #b3261e 30%, transparent);
+        border-radius: 8px; padding: 12px 14px; font-size: 13px;
+      }
+      code { background: color-mix(in srgb, currentColor 10%, transparent);
+             padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+      .stat { display: flex; justify-content: space-between; padding: 5px 0;
+              border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent); }
+    </style>
+  </head>
+  <body>
+    <h1>Eclipse</h1>
+    <p class="sub">English speaker learning Mandarin.</p>
+
+    <section>
+      <label for="key">Hack Club API key</label>
+      <input id="key" type="password" placeholder="paste your key" autocomplete="off" />
+      <p class="note">
+        Stays on this computer. Get one from your Hack Club AI dashboard.
+      </p>
+    </section>
+
+    <section>
+      <label for="level">About what HSK level are you?</label>
+      <select id="level">
+        <option value="0">Complete beginner</option>
+        <option value="1">HSK 1 — a few hundred words</option>
+        <option value="2">HSK 2</option>
+        <option value="3">HSK 3</option>
+        <option value="4">HSK 4</option>
+        <option value="5">HSK 5</option>
+        <option value="6">HSK 6</option>
+        <option value="7">HSK 7 and above</option>
+      </select>
+      <p class="note">
+        Only a starting guess, and Eclipse stays unsure about it. It will work
+        your real level out from what you answer, usually within a page or two.
+      </p>
+    </section>
+
+    <section>
+      <label for="intensity">How much Mandarin per screen</label>
+      <select id="intensity">
+        <option value="gentle">Gentle</option>
+        <option value="normal">Normal (recommended)</option>
+        <option value="intense">Intense</option>
+      </select>
+      <p class="note" id="intensity-note"></p>
+      <p class="note">
+        This sets a ceiling, not a target. Eclipse still works out how much
+        this particular page can carry — it just will not go above what you
+        pick here. Setting an exact number of words would not work, because
+        how many a page can carry depends on how many of them you happen to
+        know.
+      </p>
+    </section>
+
+    <section>
+      <label for="model">Model</label>
+      <input id="model" type="text" />
+      <p class="note">
+        <code>google/gemini-3.5-flash-lite</code> was chosen by measurement: fastest,
+        ten to thirty times cheaper than the alternatives, and it applied the most
+        swaps. Reasoning models are a poor fit here — Eclipse has already decided
+        every word, so thinking about it is wasted time and money.
+      </p>
+    </section>
+
+    <div class="row">
+      <button id="save">Save</button>
+      <span id="saved" class="saved" hidden>saved</span>
+    </div>
+
+    <section style="margin-top: 34px">
+      <label>What Eclipse knows about you</label>
+      <div id="stats"></div>
+      <div class="row">
+        <button class="quiet" id="forget">Forget everything</button>
+      </div>
+    </section>
+
+    <section>
+      <div class="warn">
+        <strong>Where your page text goes.</strong>
+        When Eclipse is switched on for a site, the sentences on screen are sent
+        to Hack Club AI to be rewritten. Eclipse is off on every site until you
+        switch it on, and it refuses to run at all on banking, email, health and
+        sign-in pages. That refusal cannot be turned off.
+      </div>
+    </section>
+
+    <script src="options.js"></script>
+  </body>
+</html>
