@@ -88,15 +88,8 @@ interface Score {
   error?: string;
 }
 
-async function score(model: string, work: SwapRequest[]): Promise<Score> {
-  const base: Score = {
-    model, ok: false, ms: 0, cost: 0, reasoningTokens: 0, outputTokens: 0,
-    valid: 0, asked: work.length, swapsUsed: 0,
-    swapsAsked: work.reduce((s, w) => s + w.replace.length, 0),
-    wordForWord: 0, problems: [], samples: [],
-  };
-
-  const started = Date.now();
+/** One sentence, one request — mirrors what src/background/model.ts ships. */
+async function callOne(model: string, request: SwapRequest) {
   let res: Response;
   try {
     res = await fetch(`${BASE}/chat/completions`, {
@@ -106,50 +99,68 @@ async function score(model: string, work: SwapRequest[]): Promise<Score> {
         model,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userMessage(work) },
+          { role: "user", content: userMessage(request) },
         ],
         temperature: TEMPERATURE,
         // Generous. The probe showed a tight cap silently truncates, which
         // looks exactly like a format failure and hides the real cause.
-        max_tokens: 4000,
+        max_tokens: 1000,
         // No response_format: forcing json_schema decoding on Gemini Flash
         // models is a documented trigger for a token-repetition loop. See
         // the comment on SYSTEM_PROMPT in src/background/prompt.ts.
       }),
     });
   } catch (err) {
-    return { ...base, ms: Date.now() - started, error: String(err) };
+    return { error: String(err), cost: 0, reasoningTokens: 0, outputTokens: 0 };
   }
 
-  base.ms = Date.now() - started;
   const raw = await res.text();
-  if (!res.ok) return { ...base, error: `HTTP ${res.status}: ${raw.slice(0, 200)}` };
+  if (!res.ok) return { error: `HTTP ${res.status}: ${raw.slice(0, 200)}`, cost: 0, reasoningTokens: 0, outputTokens: 0 };
 
   let body: any;
   try {
     body = JSON.parse(raw);
   } catch {
-    return { ...base, error: "response was not JSON" };
+    return { error: "response was not JSON", cost: 0, reasoningTokens: 0, outputTokens: 0 };
   }
 
-  base.cost = body?.usage?.cost ?? 0;
-  base.reasoningTokens = body?.usage?.completion_tokens_details?.reasoning_tokens ?? 0;
-  base.outputTokens = body?.usage?.completion_tokens ?? 0;
+  const cost = body?.usage?.cost ?? 0;
+  const reasoningTokens = body?.usage?.completion_tokens_details?.reasoning_tokens ?? 0;
+  const outputTokens = body?.usage?.completion_tokens ?? 0;
 
   const content = body?.choices?.[0]?.message?.content;
   if (!content) {
-    return { ...base, error: `empty content (finish: ${body?.choices?.[0]?.finish_reason})` };
+    return { error: `empty content (finish: ${body?.choices?.[0]?.finish_reason})`, cost, reasoningTokens, outputTokens };
   }
 
-  const byIndex = new Map(parseReply(content).map((s) => [s.i, s]));
+  return { content: content as string, cost, reasoningTokens, outputTokens };
+}
 
-  for (const request of work) {
-    const reply = byIndex.get(request.i);
-    if (!reply) {
-      base.problems.push(`[${request.i}] no reply`);
+async function score(model: string, work: SwapRequest[]): Promise<Score> {
+  const base: Score = {
+    model, ok: false, ms: 0, cost: 0, reasoningTokens: 0, outputTokens: 0,
+    valid: 0, asked: work.length, swapsUsed: 0,
+    swapsAsked: work.reduce((s, w) => s + w.replace.length, 0),
+    wordForWord: 0, problems: [], samples: [],
+  };
+
+  const started = Date.now();
+  const results = await Promise.all(work.map((r) => callOne(model, r)));
+  base.ms = Date.now() - started;
+
+  for (let idx = 0; idx < work.length; idx++) {
+    const request = work[idx]!;
+    const r = results[idx]!;
+    base.cost += r.cost;
+    base.reasoningTokens += r.reasoningTokens;
+    base.outputTokens += r.outputTokens;
+
+    if (!r.content) {
+      base.problems.push(`[${request.i}] ${r.error ?? "no reply"}`);
       continue;
     }
 
+    const reply = parseReply(r.content);
     const checked = checkReply(request, reply);
 
     if (checked.ok) {
@@ -163,6 +174,7 @@ async function score(model: string, work: SwapRequest[]): Promise<Score> {
   }
 
   base.ok = base.valid > 0;
+  if (!base.ok && results.every((r) => r.error)) base.error = results[0]?.error;
   return base;
 }
 
