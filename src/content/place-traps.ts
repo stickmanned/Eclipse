@@ -195,6 +195,7 @@ export function planPlacements(
     context,
     {
       maxTraps: options.maxTraps ?? DEFAULT_SELECTION_LIMITS.maxTraps,
+      maxTrapsPerBlock: DEFAULT_SELECTION_LIMITS.maxTrapsPerBlock,
       minTraps: DEFAULT_SELECTION_LIMITS.minTraps,
       maxDensity: DEFAULT_SELECTION_LIMITS.maxDensity,
       eligibleWordCount: countEligibleWords(blocks),

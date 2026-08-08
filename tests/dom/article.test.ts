@@ -152,15 +152,27 @@ describe('excluded ancestors', () => {
 });
 
 describe('scanning limits', () => {
-  it('stops after the text-node cap', () => {
+  it('keeps scanning after Wikipedia-style inline links and citations', () => {
+    const inlineNoise = Array.from(
+      { length: 550 },
+      (_, i) => `<a href="/wiki/${i}">linked term ${i}</a><sup>[${i}]</sup> `,
+    ).join('');
+    renderBody(`<main><p>${inlineNoise}</p><p id="late-1">${longProse()}</p><p id="late-2">${longProse()}</p><p id="late-3">${longProse()}</p></main>`);
+    const root = document.querySelector('main')!;
+    const blocks = collectEligibleBlocks(root);
+
+    expect(blocks.some((block) => block.element.id === 'late-3')).toBe(true);
+  });
+
+  it('retains a defensive text-node cap on pathological pages', () => {
     const many = Array.from(
-      { length: 900 },
+      { length: 6_000 },
       (_, i) => `<p>Paragraph number ${i} of prose.</p>`,
     ).join('');
     renderBody(`<article>${many}</article>`);
     const root = document.querySelector('article')!;
     const blocks = collectEligibleBlocks(root);
-    expect(blocks.length).toBeLessThanOrEqual(500);
+    expect(blocks.length).toBeLessThanOrEqual(5_000);
   });
 });
 

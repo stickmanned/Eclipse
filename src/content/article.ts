@@ -45,8 +45,37 @@ export const EXCLUDED_ANCESTOR_SELECTOR = [
 
 export const MIN_READABLE_CHARACTERS = 500;
 export const MIN_ELIGIBLE_BLOCKS = 3;
-export const MAX_TEXT_NODES = 500;
+export const MAX_TEXT_NODES = 5_000;
 export const MAX_SCANNED_CHARACTERS = 100_000;
+
+/**
+ * Subtrees that are never article prose. Link labels are deliberately absent:
+ * they help preserve the sentence a reader sees even though Eclipse will not
+ * replace text inside the link itself.
+ */
+const NON_PROSE_ANCESTOR_SELECTOR = [
+  'script',
+  'style',
+  'code',
+  'pre',
+  'kbd',
+  'samp',
+  'input',
+  'textarea',
+  'select',
+  'form',
+  'button',
+  'nav',
+  'header',
+  'footer',
+  'aside',
+  'figcaption',
+  'table',
+  '[contenteditable]',
+  '[contenteditable="true"]',
+  '[aria-hidden="true"]',
+  '[hidden]',
+].join(',');
 
 /** Salience by block type: body prose outranks list fragments. */
 const SALIENCE_BY_TAG: Readonly<Record<string, number>> = {
@@ -224,20 +253,15 @@ export function collectEligibleBlocks(root: Element): EligibleBlock[] {
 
   let current = walker.nextNode();
   while (current) {
-    if (visitedNodes >= MAX_TEXT_NODES) break;
-    if (scannedCharacters >= MAX_SCANNED_CHARACTERS) break;
-
     const textNode = current as Text;
     current = walker.nextNode();
 
     const data = textNode.data;
     if (data.length === 0) continue;
 
-    visitedNodes += 1;
-    scannedCharacters += data.length;
-
     const block = nearestBlock(textNode, root);
     if (!block) continue;
+    if (textNode.parentElement?.closest(NON_PROSE_ANCESTOR_SELECTOR)) continue;
 
     let visible = blockVisibility.get(block);
     if (visible === undefined) {
@@ -245,6 +269,11 @@ export function collectEligibleBlocks(root: Element): EligibleBlock[] {
       blockVisibility.set(block, visible);
     }
     if (!visible) continue;
+
+    if (visitedNodes >= MAX_TEXT_NODES) break;
+    if (scannedCharacters + data.length > MAX_SCANNED_CHARACTERS) break;
+    visitedNodes += 1;
+    scannedCharacters += data.length;
 
     let bucket = byBlock.get(block);
     if (!bucket) {

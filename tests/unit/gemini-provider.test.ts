@@ -165,6 +165,30 @@ describe('Gemini provider boundary', () => {
     expect(requests[1]?.request.system_instruction).toContain('REPAIR ATTEMPT');
   });
 
+  it('retries one transient 503 before reporting the provider unavailable', async () => {
+    const requests: GeminiInteractionRequest[] = [];
+    const client: GeminiClient = {
+      interactions: {
+        async create(request) {
+          requests.push(request);
+          if (requests.length === 1) throw Object.assign(new Error('overloaded'), { status: 503 });
+          return { output_text: JSON.stringify(VALID_OUTPUT) };
+        },
+      },
+    };
+    const provider = geminiProvider({
+      apiKey: 'test-key',
+      model: 'gemini-3.5-flash-lite',
+      client,
+    });
+
+    await expect(provider.generate(REQUEST, new AbortController().signal)).resolves.toEqual({
+      kind: 'ok',
+      output: VALID_OUTPUT,
+    });
+    expect(requests).toHaveLength(2);
+  });
+
   it('reports an aborted request as a timeout', async () => {
     const controller = new AbortController();
     controller.abort();

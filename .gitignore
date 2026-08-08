@@ -1,9 +1,4 @@
-node_modules/
-.output/
-.output-e2e/
-.wxt/
-stats.html
-stats-*.json
+
 
 # Playwright
 test-results/
@@ -25,8 +20,3 @@ Thumbs.db
 .vscode/
 *.swp
 
-# Logs
-*.log
-npm-debug.log*
-
-.docs/DEVELOPMENT_PLAN_HISTORY.md

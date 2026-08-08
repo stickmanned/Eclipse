@@ -120,6 +120,8 @@ export function compareCandidates(a: ScoredCandidate, b: ScoredCandidate): numbe
 export interface SelectionLimits {
   /** Hard ceiling on rendered traps. */
   readonly maxTraps: number;
+  /** Per-paragraph ceiling; distinct sentences and non-overlap still apply. */
+  readonly maxTrapsPerBlock: number;
   /** Floor below which activation reports NO_ELIGIBLE_TRAPS. */
   readonly minTraps: number;
   /** Share of eligible words that may be replaced. */
@@ -129,16 +131,17 @@ export interface SelectionLimits {
 }
 
 export const DEFAULT_SELECTION_LIMITS = {
-  maxTraps: 4,
+  maxTraps: 60,
+  maxTrapsPerBlock: 2,
   minTraps: 2,
-  maxDensity: 0.03,
+  maxDensity: 0.08,
 } as const;
 
 /**
  * Apply the placement rules to a ranked list.
  *
  * - at most `maxTraps`
- * - at most one per block
+ * - at most `maxTrapsPerBlock` per block
  * - never two in one sentence
  * - never two overlapping source ranges
  * - never two traps for the same concept
@@ -156,19 +159,19 @@ export function selectCandidates(
   const cap = Math.max(0, Math.min(limits.maxTraps, densityCap));
 
   const chosen: ScoredCandidate[] = [];
-  const usedBlocks = new Set<string>();
+  const blockCounts = new Map<string, number>();
   const usedSentences = new Set<string>();
   const usedConcepts = new Set<string>();
 
   for (const candidate of ranked) {
     if (chosen.length >= cap) break;
-    if (usedBlocks.has(candidate.blockKey)) continue;
+    if ((blockCounts.get(candidate.blockKey) ?? 0) >= limits.maxTrapsPerBlock) continue;
     if (usedSentences.has(candidate.sentenceKey)) continue;
     if (usedConcepts.has(candidate.conceptId)) continue;
     if (overlapsChosen(candidate, chosen)) continue;
 
     chosen.push(candidate);
-    usedBlocks.add(candidate.blockKey);
+    blockCounts.set(candidate.blockKey, (blockCounts.get(candidate.blockKey) ?? 0) + 1);
     usedSentences.add(candidate.sentenceKey);
     usedConcepts.add(candidate.conceptId);
   }

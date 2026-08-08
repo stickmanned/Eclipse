@@ -49,7 +49,13 @@ function masteryRecord(overrides: Partial<ConceptMastery> = {}): ConceptMastery 
   };
 }
 
-const LIMITS = { maxTraps: 4, minTraps: 2, maxDensity: 0.03, eligibleWordCount: 1000 };
+const LIMITS = {
+  maxTraps: 4,
+  maxTrapsPerBlock: 2,
+  minTraps: 2,
+  maxDensity: 0.08,
+  eligibleWordCount: 1000,
+};
 
 describe('the weights match the plan', () => {
   it('is 0.40 / 0.30 / 0.20 / 0.10', () => {
@@ -187,7 +193,7 @@ describe('placement rules', () => {
     expect(selectCandidates(spread, context(), LIMITS)).toHaveLength(4);
   });
 
-  it('places at most one trap per block', () => {
+  it('places at most two traps per block', () => {
     const sameBlock = [
       candidate({ trapId: 'a', conceptId: 'fr:attendre:wait', sentenceKey: 'block:0#0' }),
       candidate({
@@ -197,8 +203,15 @@ describe('placement rules', () => {
         rangeStart: 40,
         rangeEnd: 46,
       }),
+      candidate({
+        trapId: 'c',
+        conceptId: 'fr:actuellement:currently',
+        sentenceKey: 'block:0#2',
+        rangeStart: 70,
+        rangeEnd: 78,
+      }),
     ];
-    expect(selectCandidates(sameBlock, context(), LIMITS)).toHaveLength(1);
+    expect(selectCandidates(sameBlock, context(), LIMITS)).toHaveLength(2);
   });
 
   it('never places two traps in one sentence', () => {
@@ -239,15 +252,19 @@ describe('placement rules', () => {
     expect(selectCandidates(repeated, context(), LIMITS)).toHaveLength(1);
   });
 
-  it('honours the 3% density ceiling', () => {
+  it('honours the configured density ceiling', () => {
     // 66 eligible words => floor(66 * 0.03) = 1 trap.
-    const limited = { ...LIMITS, eligibleWordCount: 66 };
+    const limited = { ...LIMITS, maxDensity: 0.03, eligibleWordCount: 66 };
     expect(selectCandidates(spread, context(), limited)).toHaveLength(1);
 
     // 33 eligible words => floor(0.99) = 0 traps.
-    expect(selectCandidates(spread, context(), { ...LIMITS, eligibleWordCount: 33 })).toHaveLength(
-      0,
-    );
+    expect(
+      selectCandidates(spread, context(), {
+        ...LIMITS,
+        maxDensity: 0.03,
+        eligibleWordCount: 33,
+      }),
+    ).toHaveLength(0);
   });
 });
 
@@ -281,6 +298,7 @@ describe('due override', () => {
     const chosen = selectCandidates([freshHighScore, dueLowScore], withDue, {
       ...LIMITS,
       maxTraps: 1,
+      maxTrapsPerBlock: 2,
     });
     expect(chosen.map((c) => c.trapId)).toEqual(['due']);
   });

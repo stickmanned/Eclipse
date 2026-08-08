@@ -85,6 +85,14 @@ function genericArticle(): string {
   return `<article>${paragraphs.map((paragraph) => `<p>${paragraph}</p>`).join('')}</article>`;
 }
 
+function longGeneratedArticle(paragraphCount = 6): string {
+  const paragraphs = Array.from({ length: paragraphCount }, (_, index) => {
+    const number = index + 1;
+    return `Researchers observed district ${number} throughout the winter while nearby communities documented changes in local weather for a regional study. Engineers then compared those records with traffic patterns and public reports before presenting practical recommendations.`;
+  });
+  return `<article>${paragraphs.map((paragraph) => `<p>${paragraph}</p>`).join('')}</article>`;
+}
+
 describe('provider disabled', () => {
   it('is never called', async () => {
     renderHtml(loadDemo('demo-a.html'));
@@ -114,6 +122,24 @@ describe('provider disabled', () => {
 });
 
 describe('provider enabled', () => {
+  it('places two generated traps per eligible paragraph on a long article', async () => {
+    renderHtml(longGeneratedArticle());
+    const host = hostWith(async (_sessionId, sentences) =>
+      success(sentences.map((sentence) => generatedFor(sentence.id, sentence.text))),
+    );
+    const session = new ContentSession(document, host);
+
+    const result = await session.activate('ses_dense_article', true);
+    expect(result.ok).toBe(true);
+    await flush();
+    await flush();
+
+    expect(tokens()).toHaveLength(12);
+    for (const paragraph of document.querySelectorAll('p')) {
+      expect(paragraph.querySelectorAll('[data-eclipse-owner]')).toHaveLength(2);
+    }
+  });
+
   it('awaits one bounded request and activates a catalog-free article with initial traps', async () => {
     renderHtml(genericArticle());
 
@@ -142,7 +168,7 @@ describe('provider enabled', () => {
     expect(tokens().length).toBeLessThanOrEqual(4);
   });
 
-  it('does not delay activation', async () => {
+  it('waits for the provider so the final placement is atomic', async () => {
     renderHtml(loadDemo('demo-a.html'));
 
     let resolveRequest: (value: Result<GeneratedTrapCandidate[]>) => void = () => undefined;
@@ -153,15 +179,16 @@ describe('provider enabled', () => {
     const host = hostWith(() => pending);
     const session = new ContentSession(document, host);
 
-    // Activation resolves while the provider request is still outstanding.
-    const result = await session.activate('ses_a', true);
+    const activation = session.activate('ses_a', true);
+    await flush();
+    expect(tokens()).toHaveLength(0);
+
+    resolveRequest(success([]));
+    const result = await activation;
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.data.trapCount).toBeGreaterThanOrEqual(2);
     const catalogCount = tokens().length;
     expect(catalogCount).toBeGreaterThanOrEqual(2);
-
-    resolveRequest(success([]));
-    await flush();
     expect(tokens()).toHaveLength(catalogCount);
   });
 
@@ -208,24 +235,27 @@ describe('provider enabled', () => {
     // nothing changed. Both are correct; what must never happen is losing a
     // catalog trap.
     expect(after.length).toBeGreaterThanOrEqual(before);
-    expect(after.length).toBeLessThanOrEqual(4);
+    expect(after.length).toBeLessThanOrEqual(60);
     if (generated.length > 0) {
       expect(generated[0]?.textContent).toBe('observer');
       expect(generated[0]?.getAttribute('lang')).toBe('fr-FR');
     }
   });
 
-  it('never exceeds four traps in total', async () => {
+  it('never exceeds two traps per paragraph or the page ceiling', async () => {
     renderHtml(loadDemo('demo-a.html'));
     const host = hostWith(async (_sessionId, sentences) =>
       success(sentences.map((sentence) => generatedFor(sentence.id, sentence.text))),
     );
 
     const session = new ContentSession(document, host);
-    await session.activate('ses_a', true);
-    await flush();
+    const result = await session.activate('ses_a', true);
+    expect(result.ok).toBe(true);
 
-    expect(tokens().length).toBeLessThanOrEqual(4);
+    expect(tokens().length).toBeLessThanOrEqual(60);
+    for (const paragraph of document.querySelectorAll('p')) {
+      expect(paragraph.querySelectorAll('[data-eclipse-owner]').length).toBeLessThanOrEqual(2);
+    }
   });
 
   it('keeps every catalog trap when the provider fails', async () => {
@@ -289,12 +319,16 @@ describe('provider enabled', () => {
 
     const host = hostWith(() => pending);
     const session = new ContentSession(document, host);
-    await session.activate('ses_a', true);
+    const activation = session.activate('ses_a', true);
+    await flush();
 
     await session.deactivate('ses_a');
     expect(tokens()).toHaveLength(0);
 
     resolveRequest(success([generatedFor('s0', 'They chose to stay in the dark room.')]));
+    const result = await activation;
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('SESSION_REPLACED');
     await flush();
 
     // The page was already handed back; nothing may be re-inserted into it.

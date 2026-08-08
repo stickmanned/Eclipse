@@ -11,7 +11,7 @@
  */
 
 import { createInteractionId } from '../domain/ids';
-import { failure, success, type Result } from '../domain/errors';
+import { failure, success, type Failure, type Result } from '../domain/errors';
 import type { ActivatedData, DeactivatedData } from '../domain/messages';
 import { normalizedVisibleText } from '../domain/normalize';
 import { recordAnswer } from '../domain/mastery';
@@ -28,12 +28,7 @@ import {
   type EligibleBlock,
 } from './article';
 import { InvalidationWatcher, TokenRegistry } from './dom-tokens';
-import {
-  collectGeneratedCandidates,
-  planPlacements,
-  type GeneratedSentenceTarget,
-  type Placement,
-} from './place-traps';
+import { planPlacements, type GeneratedSentenceTarget, type Placement } from './place-traps';
 import { OverlayStore } from './overlay-store';
 import type { StorageArea } from '../storage/area';
 import {
@@ -70,7 +65,7 @@ export interface ProviderSentence {
 /** Mirrors the provider client's limits so the two cannot drift apart. */
 const MAX_PROVIDER_SENTENCES = 8;
 const MAX_PROVIDER_SENTENCE_LENGTH = 300;
-const MAX_TRAPS_PER_PAGE = 4;
+const MAX_CONCURRENT_PROVIDER_REQUESTS = 2;
 
 export interface OverlayCallbacks {
   onAnswer(trapId: string, choice: string): void;
@@ -89,9 +84,6 @@ interface ActiveState {
   /** Trap ids already answered in this session. */
   readonly answered: Set<string>;
   /** The blocks scanned at activation, for optional provider augmentation. */
-  readonly blocks: readonly EligibleBlock[];
-  /** Block keys that already carry a trap. */
-  readonly usedBlocks: Set<string>;
   invalidated: boolean;
 }
 
@@ -105,7 +97,7 @@ interface PreparedProviderRequest {
  * crowd out the rest of the article. Every sentence overlaps at least one text
  * node Eclipse is permitted to replace.
  */
-function prepareProviderRequest(blocks: readonly EligibleBlock[]): PreparedProviderRequest {
+function prepareProviderRequests(blocks: readonly EligibleBlock[]): PreparedProviderRequest[] {
   const queues = blocks.map((block) => ({
     block,
     sentences: splitSentences(block.text, block.key).filter((sentence) => {
@@ -121,10 +113,9 @@ function prepareProviderRequest(blocks: readonly EligibleBlock[]): PreparedProvi
   const targets: GeneratedSentenceTarget[] = [];
   let sentenceIndex = 0;
 
-  while (sentences.length < MAX_PROVIDER_SENTENCES) {
+  while (sentenceIndex < DEFAULT_SELECTION_LIMITS.maxTrapsPerBlock) {
     let added = false;
     for (const queue of queues) {
-      if (sentences.length >= MAX_PROVIDER_SENTENCES) break;
       const sentence = queue.sentences[sentenceIndex];
       if (!sentence) continue;
 
@@ -137,7 +128,20 @@ function prepareProviderRequest(blocks: readonly EligibleBlock[]): PreparedProvi
     sentenceIndex += 1;
   }
 
-  return { sentences, targets };
+  const requests: PreparedProviderRequest[] = [];
+  for (let start = 0; start < sentences.length; start += MAX_PROVIDER_SENTENCES) {
+    requests.push({
+      sentences: sentences.slice(start, start + MAX_PROVIDER_SENTENCES),
+      targets: targets.slice(start, start + MAX_PROVIDER_SENTENCES),
+    });
+  }
+  return requests;
+}
+
+interface ProviderBatchResult {
+  readonly candidates: GeneratedTrapCandidate[];
+  readonly targets: GeneratedSentenceTarget[];
+  readonly failure: Failure | null;
 }
 
 export class ContentSession {
@@ -200,36 +204,20 @@ export class ContentSession {
     };
 
     let placements = planPlacements(blocks, selectionContext);
-    let providerUsedForInitialPlan = false;
 
-    if (placements.length < DEFAULT_SELECTION_LIMITS.minTraps) {
-      if (!providerEnabled || !this.host.requestGeneratedTraps) {
-        return this.activationFailure(activationToken, 'NO_ELIGIBLE_TRAPS');
-      }
-
-      const prepared = prepareProviderRequest(blocks);
-      if (prepared.sentences.length === 0) {
-        return this.activationFailure(activationToken, 'NO_ELIGIBLE_TRAPS');
-      }
-
-      let generated: Result<GeneratedTrapCandidate[]>;
-      try {
-        generated = await this.host.requestGeneratedTraps(sessionId, prepared.sentences);
-      } catch {
-        generated = failure('PROVIDER_UNAVAILABLE');
-      }
-
+    if (providerEnabled && this.host.requestGeneratedTraps) {
+      const generated = await this.requestProviderBatches(sessionId, blocks);
       if (!this.isCurrentActivation(activationToken)) return failure('SESSION_REPLACED');
-      if (!generated.ok) {
-        this.finishActivation(activationToken);
-        return generated;
-      }
 
-      providerUsedForInitialPlan = true;
-      placements = planPlacements(blocks, selectionContext, {
-        generatedCandidates: generated.data,
-        generatedTargets: prepared.targets,
-      });
+      if (generated.candidates.length > 0) {
+        placements = planPlacements(blocks, selectionContext, {
+          generatedCandidates: generated.candidates,
+          generatedTargets: generated.targets,
+        });
+      } else if (placements.length < DEFAULT_SELECTION_LIMITS.minTraps && generated.failure) {
+        this.finishActivation(activationToken);
+        return generated.failure;
+      }
     }
 
     if (placements.length < DEFAULT_SELECTION_LIMITS.minTraps) {
@@ -268,8 +256,6 @@ export class ContentSession {
       teardown,
       interactions: new Map(),
       answered: new Set(),
-      blocks,
-      usedBlocks: new Set(placements.map((placement) => placement.block.key)),
       invalidated: false,
     };
     this.active = state;
@@ -277,15 +263,6 @@ export class ContentSession {
 
     this.doc.addEventListener('click', this.onDocumentClick, true);
     watcher.start(this.doc.documentElement);
-
-    // Fire and forget. Activation has already succeeded and the catalog traps
-    // are on the page; the provider can only ever add to them, never delay or
-    // remove them. The catch is load-bearing: an unhandled rejection inside a
-    // content script surfaces in the host page's console as if the page had
-    // caused it.
-    if (providerEnabled && this.host.requestGeneratedTraps && !providerUsedForInitialPlan) {
-      void this.augmentWithProvider(state).catch(() => undefined);
-    }
 
     return success(this.describe(state));
   }
@@ -309,58 +286,56 @@ export class ContentSession {
     return success(traps.size);
   }
 
-  /**
-   * Ask the optional provider for extra traps and place any that survive
-   * validation into blocks that do not already have one.
-   *
-   * Everything here is best-effort. A failure, a timeout, a disabled provider
-   * or output that does not validate all end the same way: the page keeps
-   * exactly the catalog traps it already had.
-   */
-  private async augmentWithProvider(state: ActiveState): Promise<void> {
+  /** Collect provider batches before the one atomic DOM placement pass. */
+  private async requestProviderBatches(
+    sessionId: string,
+    blocks: readonly EligibleBlock[],
+  ): Promise<ProviderBatchResult> {
     const request = this.host.requestGeneratedTraps;
-    if (!request) return;
+    if (!request) return { candidates: [], targets: [], failure: null };
 
-    const free = state.blocks.filter((block) => !state.usedBlocks.has(block.key));
-    const prepared = prepareProviderRequest(free);
-    const { sentences } = prepared;
+    const prepared = prepareProviderRequests(blocks);
+    if (prepared.length === 0) return { candidates: [], targets: [], failure: null };
 
-    if (sentences.length === 0) return;
+    const results: Array<Result<GeneratedTrapCandidate[]> | undefined> = new Array(
+      prepared.length,
+    );
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      while (next < prepared.length) {
+        const index = next;
+        next += 1;
+        const batch = prepared[index];
+        if (!batch) continue;
+        try {
+          results[index] = await request(sessionId, batch.sentences);
+        } catch {
+          results[index] = failure('PROVIDER_UNAVAILABLE');
+        }
+      }
+    };
 
-    // A provider that throws is the same outcome as one that reports failure:
-    // the catalog traps already on the page stand, and nothing is logged to the
-    // host page's console.
-    let result: Result<GeneratedTrapCandidate[]>;
-    try {
-      result = await request(state.sessionId, sentences);
-    } catch {
-      return;
-    }
-    if (!result.ok) return;
+    await Promise.all(
+      Array.from(
+        { length: Math.min(MAX_CONCURRENT_PROVIDER_REQUESTS, prepared.length) },
+        () => worker(),
+      ),
+    );
 
-    // The session may have ended or been replaced while the request was out.
-    if (this.active !== state || state.invalidated) return;
-
-    for (const placement of collectGeneratedCandidates(result.data, prepared.targets)) {
-      if (state.traps.size >= MAX_TRAPS_PER_PAGE) break;
-
-      const trap = placement.trap;
-      if (state.usedBlocks.has(placement.block.key)) continue;
-      if (Array.from(state.traps.values()).some((placed) => placed.conceptId === trap.conceptId)) {
+    const candidates: GeneratedTrapCandidate[] = [];
+    const targets: GeneratedSentenceTarget[] = [];
+    let lastFailure: Failure | null = null;
+    for (const [index, result] of results.entries()) {
+      const batch = prepared[index];
+      if (!batch || !result) continue;
+      if (!result.ok) {
+        lastFailure = result;
         continue;
       }
-
-      const range = resolveRange(placement.block, placement.blockStart, placement.blockEnd);
-      if (!range) continue;
-
-      const token = state.watcher.suppress(() =>
-        state.registry.insert(range.node, range.start, range.end, trap),
-      );
-      if (!token) continue;
-
-      state.traps.set(trap.id, trap);
-      state.usedBlocks.add(placement.block.key);
+      candidates.push(...result.data);
+      targets.push(...batch.targets);
     }
+    return { candidates, targets, failure: lastFailure };
   }
 
   private isCurrentActivation(token: symbol): boolean {
