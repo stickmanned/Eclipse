@@ -85,8 +85,8 @@ describe('state 1 — the question', () => {
     expect(container.querySelector('#eclipse-title')?.textContent).toBe('attendre');
   });
 
-  it('shows the fixed language pair', () => {
-    expect(container.querySelector('.eclipse-eyebrow')?.textContent).toBe('English → French');
+  it('shows the item kind and DELF complexity', () => {
+    expect(container.querySelector('.eclipse-eyebrow')?.textContent).toBe('French word · DELF A2');
   });
 
   it('marks the French surface with lang="fr-FR"', () => {
@@ -142,6 +142,32 @@ describe('state 1 — the question', () => {
   });
 });
 
+describe('complete phrase translation', () => {
+  it('asks one question about the whole highlighted phrase', () => {
+    const phrase = validTrap({
+      id: 'fr:devoir-attendre:had-to-wait@0:3',
+      conceptId: 'fr:devoir-attendre:had-to-wait',
+      type: 'phrase',
+      sentence: 'We had to wait for the bus in the rain.',
+      exactSourceText: 'had to wait',
+      targetSurface: 'a dû attendre',
+      choices: ['had to wait', 'wanted to leave', 'could take'],
+      acceptedChoice: 'had to wait',
+      clueSpan: 'for the bus',
+      difficulty: 0.6,
+    });
+
+    set({ kind: 'question', trap: phrase, interactionId: 'int_phrase' });
+
+    expect(container.querySelector('.eclipse-eyebrow')?.textContent).toBe(
+      'French phrase · DELF B1',
+    );
+    expect(container.querySelector('.eclipse-question')?.textContent).toContain('whole phrase');
+    expect(container.querySelector('.eclipse-sentence mark')?.textContent).toBe('a dû attendre');
+    expect(choiceButtons().map((button) => button.textContent)).toContain('1had to wait');
+  });
+});
+
 describe('state 2 — correct', () => {
   beforeEach(() => {
     set({ kind: 'result', result: result({ correct: true }) });
@@ -165,7 +191,7 @@ describe('state 2 — correct', () => {
 
   it('reveals the meaning, the clue, the reason and the distractor', () => {
     const text = container.textContent ?? '';
-    expect(text).toContain('Means here');
+    expect(text).toContain('English translation');
     expect(text).toContain('The clue');
     expect(container.querySelector('.eclipse-clue')?.textContent).toBe('for the bus');
     expect(text).toContain('attendre is to wait for something.');

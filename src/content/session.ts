@@ -18,6 +18,7 @@ import { recordAnswer } from '../domain/mastery';
 import { isDue, currentIntervalDays } from '../domain/scheduling';
 import { DEFAULT_SELECTION_LIMITS } from '../domain/selection';
 import type { LearnerProfile } from '../domain/profile';
+import type { DelfLevel } from '../domain/delf';
 import { isCorrectChoice, type ContextTrap, type GeneratedTrapCandidate } from '../domain/trap';
 import {
   collectEligibleBlocks,
@@ -53,6 +54,7 @@ export interface SessionHost {
    */
   requestGeneratedTraps?(
     sessionId: string,
+    delfLevel: DelfLevel,
     sentences: ProviderSentence[],
   ): Promise<Result<GeneratedTrapCandidate[]>>;
 }
@@ -65,7 +67,23 @@ export interface ProviderSentence {
 /** Mirrors the provider client's limits so the two cannot drift apart. */
 const MAX_PROVIDER_SENTENCES = 8;
 const MAX_PROVIDER_SENTENCE_LENGTH = 300;
-const MAX_CONCURRENT_PROVIDER_REQUESTS = 2;
+/**
+ * How many generation batches are in flight at once.
+ *
+ * The binding constraint is the upstream model's per-minute quota, not
+ * instantaneous concurrency: a single wave of six batches succeeds, but ten
+ * batches sustained at four in flight pushes past the quota, and the automatic
+ * retry then hits the same wall. Measured over ten batches against the real
+ * provider:
+ *
+ *   2 → 20.3s, 73 of 80 items, no failures
+ *   3 → 16.7s, 72 of 80 items, no failures
+ *   4 →  9.3s, 43 of 80 items, four batches lost
+ *
+ * Three is the fastest setting that costs the learner nothing. Four is quicker
+ * only because it gives up on nearly half the article.
+ */
+const MAX_CONCURRENT_PROVIDER_REQUESTS = 3;
 
 export interface OverlayCallbacks {
   onAnswer(trapId: string, choice: string): void;
@@ -83,7 +101,6 @@ interface ActiveState {
   readonly interactions: Map<string, string>;
   /** Trap ids already answered in this session. */
   readonly answered: Set<string>;
-  /** The blocks scanned at activation, for optional provider augmentation. */
   invalidated: boolean;
 }
 
@@ -111,22 +128,39 @@ function prepareProviderRequests(blocks: readonly EligibleBlock[]): PreparedProv
 
   const sentences: ProviderSentence[] = [];
   const targets: GeneratedSentenceTarget[] = [];
-  let sentenceIndex = 0;
+  const appendQueues = (selectedQueues: typeof queues): void => {
+    let sentenceIndex = 0;
+    while (
+      sentenceIndex < DEFAULT_SELECTION_LIMITS.maxTrapsPerBlock &&
+      sentences.length < DEFAULT_SELECTION_LIMITS.maxTraps
+    ) {
+      let added = false;
+      for (const queue of selectedQueues) {
+        if (sentences.length >= DEFAULT_SELECTION_LIMITS.maxTraps) break;
+        const sentence = queue.sentences[sentenceIndex];
+        if (!sentence) continue;
 
-  while (sentenceIndex < DEFAULT_SELECTION_LIMITS.maxTrapsPerBlock) {
-    let added = false;
-    for (const queue of queues) {
-      const sentence = queue.sentences[sentenceIndex];
-      if (!sentence) continue;
-
-      const id = `s${sentences.length}`;
-      sentences.push({ id, text: sentence.text });
-      targets.push({ sentenceId: id, block: queue.block, sentence });
-      added = true;
+        const id = `s${sentences.length}`;
+        sentences.push({ id, text: sentence.text });
+        targets.push({ sentenceId: id, block: queue.block, sentence });
+        added = true;
+      }
+      if (!added) break;
+      sentenceIndex += 1;
     }
-    if (!added) break;
-    sentenceIndex += 1;
-  }
+  };
+
+  // Article paragraphs get their two opportunities before list fragments,
+  // headings and generic wrappers. This is especially important on Wikipedia,
+  // where references and navigation fragments vastly outnumber body paragraphs.
+  const paragraphQueues = queues.filter(
+    ({ block }) => block.element.tagName === 'P' || block.element.tagName === 'BLOCKQUOTE',
+  );
+  const fallbackQueues = queues.filter(
+    ({ block }) => block.element.tagName !== 'P' && block.element.tagName !== 'BLOCKQUOTE',
+  );
+  appendQueues(paragraphQueues);
+  appendQueues(fallbackQueues);
 
   const requests: PreparedProviderRequest[] = [];
   for (let start = 0; start < sentences.length; start += MAX_PROVIDER_SENTENCES) {
@@ -201,12 +235,13 @@ export class ContentSession {
       globalAbility: profile.globalAbility,
       mastery: profile.mastery,
       now: new Date(),
+      delfLevel: profile.delfLevel,
     };
 
     let placements = planPlacements(blocks, selectionContext);
 
     if (providerEnabled && this.host.requestGeneratedTraps) {
-      const generated = await this.requestProviderBatches(sessionId, blocks);
+      const generated = await this.requestProviderBatches(sessionId, profile.delfLevel, blocks);
       if (!this.isCurrentActivation(activationToken)) return failure('SESSION_REPLACED');
 
       if (generated.candidates.length > 0) {
@@ -289,6 +324,7 @@ export class ContentSession {
   /** Collect provider batches before the one atomic DOM placement pass. */
   private async requestProviderBatches(
     sessionId: string,
+    delfLevel: DelfLevel,
     blocks: readonly EligibleBlock[],
   ): Promise<ProviderBatchResult> {
     const request = this.host.requestGeneratedTraps;
@@ -297,9 +333,7 @@ export class ContentSession {
     const prepared = prepareProviderRequests(blocks);
     if (prepared.length === 0) return { candidates: [], targets: [], failure: null };
 
-    const results: Array<Result<GeneratedTrapCandidate[]> | undefined> = new Array(
-      prepared.length,
-    );
+    const results: Array<Result<GeneratedTrapCandidate[]> | undefined> = new Array(prepared.length);
     let next = 0;
     const worker = async (): Promise<void> => {
       while (next < prepared.length) {
@@ -308,7 +342,7 @@ export class ContentSession {
         const batch = prepared[index];
         if (!batch) continue;
         try {
-          results[index] = await request(sessionId, batch.sentences);
+          results[index] = await request(sessionId, delfLevel, batch.sentences);
         } catch {
           results[index] = failure('PROVIDER_UNAVAILABLE');
         }
@@ -316,9 +350,8 @@ export class ContentSession {
     };
 
     await Promise.all(
-      Array.from(
-        { length: Math.min(MAX_CONCURRENT_PROVIDER_REQUESTS, prepared.length) },
-        () => worker(),
+      Array.from({ length: Math.min(MAX_CONCURRENT_PROVIDER_REQUESTS, prepared.length) }, () =>
+        worker(),
       ),
     );
 

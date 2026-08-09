@@ -1,6 +1,6 @@
 /**
  * Typed failure vocabulary shared by the popup, background worker, content
- * runtime and the optional generation API.
+ * runtime and the loopback generation API.
  *
  * Every boundary in Eclipse returns a `Result`, never a thrown value. Callers
  * branch on `ok` and, when it is `false`, on `error.code`.
@@ -20,10 +20,30 @@ export const ERROR_CODES = [
   'PROVIDER_UNAVAILABLE',
   'PROVIDER_TIMEOUT',
   'PROVIDER_INVALID_RESPONSE',
+  'MESSAGE_UNSUPPORTED',
   'UNKNOWN_ERROR',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
+
+/**
+ * The one thing a learner can actually do about a message the extension does
+ * not understand. Chrome keeps a previously registered service worker alive
+ * across a rebuild, so a freshly built popup can end up talking to a worker
+ * compiled from older source; reloading the extension re-registers both halves
+ * from the same build.
+ */
+/**
+ * Eclipse's AI generation runs on a server the learner starts themselves, so
+ * "unreachable" has exactly one common cause and exactly one fix. Saying only
+ * that the API could not be reached leaves someone guessing between a stopped
+ * process, a missing key and a broken network; naming the command does not.
+ */
+export const LOCAL_API_MESSAGE =
+  'Eclipse could not reach its local AI service on http://localhost:8787. Start it with "npm run api" in the Eclipse project, then press Start Eclipse again.';
+
+export const STALE_WORKER_MESSAGE =
+  'Eclipse is still finishing an update, so its background worker did not understand that request. Reload Eclipse to finish updating.';
 
 export interface EclipseFailureDetail {
   code: ErrorCode;
@@ -56,6 +76,7 @@ const RECOVERABLE_BY_DEFAULT: Readonly<Record<ErrorCode, boolean>> = {
   PROVIDER_UNAVAILABLE: true,
   PROVIDER_TIMEOUT: true,
   PROVIDER_INVALID_RESPONSE: true,
+  MESSAGE_UNSUPPORTED: true,
   UNKNOWN_ERROR: false,
 };
 
@@ -63,17 +84,19 @@ const RECOVERABLE_BY_DEFAULT: Readonly<Record<ErrorCode, boolean>> = {
 const DEFAULT_MESSAGE: Readonly<Record<ErrorCode, string>> = {
   UNSUPPORTED_URL: 'Eclipse only runs on regular http(s) web pages.',
   NO_ARTICLE: 'No readable article was found on this page.',
-  NO_ELIGIBLE_TRAPS: 'No French context traps fit this article yet.',
+  NO_ELIGIBLE_TRAPS:
+    'Eclipse could not prepare level-matched French vocabulary for this article. Check that the AI service is running, then retry.',
   CONTENT_SCRIPT_UNAVAILABLE: 'Eclipse could not attach to this tab. Reload the page and retry.',
   SESSION_REPLACED: 'Eclipse moved to another tab.',
   DOM_INVALIDATED: 'The page changed underneath Eclipse, so the session was ended safely.',
   STORAGE_ERROR: 'Your progress could not be saved.',
   PROFILE_INCOMPATIBLE: 'Saved learning data was written by a newer version of Eclipse.',
-  PROVIDER_DISABLED: 'AI-generated traps are turned off.',
+  PROVIDER_DISABLED: 'The AI vocabulary service is not configured.',
   PROVIDER_PERMISSION_DENIED: 'Permission for the local generation API was not granted.',
-  PROVIDER_UNAVAILABLE: 'The local generation API is not reachable.',
+  PROVIDER_UNAVAILABLE: LOCAL_API_MESSAGE,
   PROVIDER_TIMEOUT: 'The local generation API took too long.',
   PROVIDER_INVALID_RESPONSE: 'The local generation API returned something Eclipse cannot trust.',
+  MESSAGE_UNSUPPORTED: STALE_WORKER_MESSAGE,
   UNKNOWN_ERROR: 'Something unexpected happened.',
 };
 

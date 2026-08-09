@@ -34,23 +34,23 @@ Eclipse scans once, at activation. Lazily-loaded paragraphs, infinite feeds and 
 - **iframes** — never traversed, so embedded articles are skipped.
 - **The host page's shadow roots** — never traversed.
 - **`file://`, `chrome://`, extension pages, and anything non-HTTP(S)** — the popup says which, and disables Start.
-- **Pages under 500 readable characters or with fewer than three eligible blocks** — reported as `NO_ARTICLE`.
+- **Pages under 80 readable characters or with no eligible prose block** — reported as `NO_ARTICLE`.
 
-## AI is required to widen coverage beyond the catalog
+## The AI service must be running for broad coverage
 
-Twelve curated French concepts ship in the box. In catalog-only mode, an article containing none of them reports `NO_ELIGIBLE_TRAPS`. When AI traps are enabled, Eclipse can ask the local Gemini-backed server for validated replacements instead; provider failure still leaves the page unchanged.
+Twelve curated French concepts ship in the box as a validated fallback. Eclipse always asks the local Gemini-backed server for ordinary useful vocabulary and complete phrases matched to the selected DELF level. If that service is unavailable, catalog-rich pages can still activate; a catalog-free page reports a recoverable AI error and remains unchanged.
 
-The optional generation API widens coverage, but it is off by default. When enabled on a page with fewer than two catalog matches, that activation waits for one bounded AI attempt. Offline catalog pages remain independent of it.
+Activation sends bounded batches so generation can target up to two sentences per paragraph before one atomic placement pass.
 
 ## Catalog French surfaces are curated; AI surfaces are strictly validated
 
-Eclipse does not algorithmically conjugate catalog entries. Every catalog surface — including inflected ones like `avait le cafard` — is written out as the exact form that fits its sentence pattern. Optional Gemini candidates may generate a surface, but it must pass the same locale, NFC, character, accent, confidence, and safety validation before placement.
+Eclipse does not algorithmically conjugate catalog entries. Every catalog surface — including inflected ones like `avait le cafard` — is written out as the exact form that fits its sentence pattern. Gemini candidates may generate a surface, but it must pass the same locale, NFC, character, accent, confidence, and safety validation before placement.
 
 A consequence: a replacement is a _learning device_, not a claim of grammaticality. "We had to **attendre** for the bus" is not a sentence in either language. It is an English sentence with one word hidden behind its French equivalent, which is the exercise.
 
 ## The moon is not a proficiency score
 
-Phases reflect performance on a handful of curated concepts in a short session. They are a study aid and a progress signal. Eclipse never calls them a level, never maps them to CEFR, and never claims to measure French ability.
+Phases reflect mastery of individual vocabulary items. They are a study aid and a progress signal, separate from the DELF reading lens. The eight-question diagnostic estimates a practical A1–B2 starting point; it is not an official DELF examination or certification.
 
 ## Selection prefers difficulty, which can surprise you
 
@@ -60,7 +60,7 @@ Scoring maximises uncertainty, so it favours the item you are least sure about. 
 
 `activeTab` is granted by a real click on the browser toolbar, which is outside the page and therefore outside what any automation driver can reach. An automated Chrome never receives that grant, so `tab.url` stays redacted and `scripting.executeScript` is refused.
 
-The E2E suite therefore runs against a build that adds two test-only loopback permissions: the demo origin (`http://127.0.0.1:4321/*`) and fake generation API (`http://localhost:8787/*`). It is built to a separate output directory and all product code is identical. `tests/e2e/manifest.spec.ts` reads the real shipped manifest from disk and asserts that required host access is absent, along with `tabs`, `history`, `cookies` and `<all_urls>`.
+The E2E suite therefore runs against a build that adds the demo origin (`http://127.0.0.1:4321/*`) alongside the production loopback AI permission (`http://localhost:8787/*`). It is built to a separate output directory and all product code is identical. `tests/e2e/manifest.spec.ts` reads the real shipped manifest from disk and asserts that no broad article host access exists, along with `tabs`, `history`, `cookies` and `<all_urls>`.
 
 The suite also shares one browser across tests rather than launching a fresh Chrome for each, resetting every key Eclipse writes between them. Thirty-odd sequential launches were slow and, in the tail of a run, unreliable; the state that actually needs isolating is the extension's storage, and that is cleared explicitly.
 
@@ -68,4 +68,4 @@ For the same reason, sessions in the E2E suite are started by sending the real `
 
 ## Not built, on purpose
 
-Automatic transformation · a chatbot · text-to-speech or pronunciation scoring · accounts or cloud sync · analytics · more language pairs · full-page translation · a separate dashboard · an authoritative proficiency score · any required network access.
+Automatic transformation · a chatbot · text-to-speech or pronunciation scoring · accounts or cloud sync · analytics · more language pairs · full-page translation · a separate dashboard · an authoritative proficiency certification.

@@ -8,6 +8,7 @@ export default tseslint.config(
       'node_modules/**',
       '.output/**',
       '.output-e2e/**',
+      'dist/**',
       '.wxt/**',
       'test-results/**',
       'playwright-report/**',

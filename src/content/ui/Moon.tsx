@@ -42,10 +42,33 @@ export function Moon({ phase, size = 28 }: MoonProps) {
       aria-label={`${PHASE_LABEL[phase]} — ${PHASE_DESCRIPTION[phase]}`}
       focusable="false"
     >
+      <defs>
+        <filter id={`moon-glow-${phase}`} x="-40%" y="-40%" width="180%" height="180%">
+          <feDropShadow
+            dx="0"
+            dy="0"
+            stdDeviation="3"
+            floodColor={COLORS.gold}
+            floodOpacity="0.35"
+          />
+        </filter>
+      </defs>
       <circle cx="16" cy="16" r="14" fill={dark} stroke={COLORS.gold} strokeWidth="1.5" />
-      {phase === 'crescent' && <path d="M16 2a14 14 0 0 0 0 28a10 14 0 0 1 0-28z" fill={lit} />}
-      {phase === 'half' && <path d="M16 2a14 14 0 0 0 0 28z" fill={lit} />}
-      {phase === 'full' && <circle cx="16" cy="16" r="14" fill={lit} />}
+      {phase === 'crescent' && (
+        <g filter={`url(#moon-glow-${phase})`}>
+          <path d="M16 2a14 14 0 0 0 0 28a10 14 0 0 1 0-28z" fill={lit} />
+        </g>
+      )}
+      {phase === 'half' && (
+        <g filter={`url(#moon-glow-${phase})`}>
+          <path d="M16 2a14 14 0 0 0 0 28z" fill={lit} />
+        </g>
+      )}
+      {phase === 'full' && (
+        <g filter={`url(#moon-glow-${phase})`}>
+          <circle cx="16" cy="16" r="14" fill={lit} />
+        </g>
+      )}
       {phase === 'new_moon' && (
         <circle cx="16" cy="16" r={radius / 8} fill={COLORS.gold} opacity="0.35" />
       )}

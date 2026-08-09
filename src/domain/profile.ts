@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 import { CONCEPT_ID_PATTERN, type ConceptId } from './trap';
+import { DELF_LEVELS, type DelfLevel } from './delf';
 
 export const PROFILE_SCHEMA_VERSION = 1;
 
@@ -43,6 +44,8 @@ export interface LearnerProfile {
   sourceLocale: 'en';
   targetLocale: 'fr-FR';
   calibrationCompleted: boolean;
+  /** Stable learner-selected or diagnostic-assigned reading lens. */
+  delfLevel: DelfLevel;
   /** -1 through 1. */
   globalAbility: number;
   mastery: Record<string, ConceptMastery>;
@@ -80,6 +83,9 @@ export const learnerProfileSchema = z.object({
   sourceLocale: z.literal('en'),
   targetLocale: z.literal('fr-FR'),
   calibrationCompleted: z.boolean(),
+  // Profiles written before DELF lenses existed safely resume at B1. Keeping
+  // the same schema version avoids treating valid learner history as corrupt.
+  delfLevel: z.enum(DELF_LEVELS).default('B1'),
   globalAbility: z.number().min(-1).max(1),
   mastery: z.record(z.string().regex(CONCEPT_ID_PATTERN), conceptMasterySchema),
   recentOutcomes: z.array(answerOutcomeSchema).max(RECENT_OUTCOMES_LIMIT),
@@ -92,6 +98,7 @@ export function createEmptyProfile(): LearnerProfile {
     sourceLocale: 'en',
     targetLocale: 'fr-FR',
     calibrationCompleted: false,
+    delfLevel: 'B1',
     globalAbility: 0,
     mastery: {},
     recentOutcomes: [],

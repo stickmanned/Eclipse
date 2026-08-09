@@ -2,8 +2,8 @@
  * Background service worker.
  *
  * Owns: popup requests, tab validation, the single active session, runtime
- * injection of the Eclipse content script, the optional provider permission and
- * network call, and session replacement across tabs.
+ * injection of the Eclipse content script, the level-matched generation call,
+ * and session replacement across tabs.
  *
  * Does NOT own: answer outcomes. Those have exactly one writer, the content
  * script, which is what removes the popup/background/content race entirely.
@@ -13,6 +13,8 @@ import { browser, type Browser } from 'wxt/browser';
 import { createSessionId } from '../domain/ids';
 import { failure, success, type Result } from '../domain/errors';
 import {
+  MESSAGE_CONTRACT_VERSION,
+  describeRejectedMessage,
   parseMessage,
   type ActivatedData,
   type DeactivatedData,
@@ -28,6 +30,7 @@ import {
 } from '../domain/messages';
 import { classifyUrl } from '../domain/url-support';
 import { summarizeMastery } from '../domain/profile';
+import { abilityForDelfLevel, type DelfLevel } from '../domain/delf';
 import { chromeArea } from '../storage/area';
 import { loadProfile, resetProfile, saveProfile } from '../storage/profile-store';
 import {
@@ -44,16 +47,14 @@ import {
   writeProviderSettings,
 } from '../storage/provider-settings';
 import { generateWithCache } from '../provider/generate-with-cache';
-import { checkProviderHealth } from '../provider/client';
 import { clearProviderCache } from '../storage/provider-cache';
 
 /** Built bundle path of the runtime-injected content script. */
 const CONTENT_SCRIPT_FILE = '/content-scripts/eclipse.js' as const;
 
 /**
- * The optional provider is only ever offered when a server origin was compiled
- * in. There is no field anywhere in the UI that lets a page or a user point
- * Eclipse at an arbitrary host.
+ * The provider origin is compiled in. There is no field anywhere in the UI
+ * that lets a page or a user point Eclipse at an arbitrary host.
  */
 const PROVIDER_CONFIGURED = PROVIDER_ORIGIN.length > 0;
 
@@ -63,8 +64,13 @@ export default defineBackground(() => {
 
   browser.runtime.onMessage.addListener((raw, sender, sendResponse) => {
     const message = parseMessage(raw);
+
+    // Never leave the channel dangling. A dropped message resolves the sender's
+    // promise with `undefined`, which reaches the learner as an error they can
+    // neither understand nor act on — the exact failure mode a stale worker
+    // produces after a rebuild. Answer with a typed, actionable failure instead.
     if (!message) {
-      sendResponse(failure('UNKNOWN_ERROR', 'Unrecognised message.'));
+      sendResponse(failure('MESSAGE_UNSUPPORTED', describeRejectedMessage(raw)));
       return false;
     }
 
@@ -110,15 +116,19 @@ export default defineBackground(() => {
       case 'RESET_PROFILE':
         return doResetProfile(message.confirmed);
       case 'SAVE_CALIBRATION':
-        return doSaveCalibration(message.globalAbility);
+        return doSaveCalibration(message.delfLevel);
       case 'SET_PROVIDER':
         return doSetProvider(message.enabled);
       case 'GENERATE_TRAPS':
-        return doGenerateTraps(message.sessionId, message.sentences, sender);
-      // PING / ACTIVATE / DEACTIVATE are addressed to the content script. The
-      // worker never answers them.
+        return doGenerateTraps(message.sessionId, message.delfLevel, message.sentences, sender);
+      // PING / ACTIVATE / DEACTIVATE are addressed to the content script and
+      // arrive there by `tabs.sendMessage`, so the worker only ever sees one if
+      // a peer is out of step. Say so rather than going quiet.
       default:
-        return failure('UNKNOWN_ERROR', `The background worker does not handle ${message.type}.`);
+        return failure(
+          'MESSAGE_UNSUPPORTED',
+          `The background worker does not handle ${message.type}.`,
+        );
     }
   }
 
@@ -150,7 +160,7 @@ export default defineBackground(() => {
     const ready = await ensureRuntime(tabId);
     if (!ready.ok) return ready;
 
-    const providerSettings = await readProviderSettings(local);
+    const providerEnabled = PROVIDER_CONFIGURED && (await hasProviderPermission());
     const sessionId = createSessionId();
 
     // The content runtime may need generation to finish ACTIVATE. Persist the
@@ -167,7 +177,7 @@ export default defineBackground(() => {
     const activated = await sendToTab<ActivatedData>(tabId, {
       type: 'ACTIVATE',
       sessionId,
-      providerEnabled: providerSettings.enabled,
+      providerEnabled,
     });
 
     if (!activated.ok) {
@@ -185,6 +195,13 @@ export default defineBackground(() => {
       await sendToTab(tabId, { type: 'DEACTIVATE', sessionId, reason: 'reset' });
       await clearSessionIfMatches(sessionId);
       return promoted;
+    }
+
+    // All generation batches have settled before ACTIVATE succeeds. Clear a
+    // stale per-batch error so a successful first click never leaves the popup
+    // claiming that the provider failed.
+    if (providerEnabled) {
+      await writeProviderSettings(local, { enabled: true, lastError: null });
     }
 
     return success({ sessionId, tabId, trapCount: activated.data.trapCount });
@@ -247,11 +264,13 @@ export default defineBackground(() => {
     const loaded = await loadProfile(local);
     if (!loaded.ok) {
       return success({
+        contractVersion: MESSAGE_CONTRACT_VERSION,
         activeTabId: active?.tabId ?? null,
         activeSessionId: active?.sessionId ?? null,
         activeHere: active?.tabId === tab?.id,
         page,
         calibrationCompleted: false,
+        delfLevel: 'B1',
         globalAbility: 0,
         phase: 'new_moon',
         summary: {
@@ -264,7 +283,7 @@ export default defineBackground(() => {
         },
         provider: {
           configured: PROVIDER_CONFIGURED,
-          enabled: providerSettings.enabled,
+          enabled: PROVIDER_CONFIGURED,
           permissionGranted: await hasProviderPermission(),
           lastError: providerSettings.lastError,
         },
@@ -276,17 +295,19 @@ export default defineBackground(() => {
     const summary = summarizeMastery(profile, now);
 
     return success({
+      contractVersion: MESSAGE_CONTRACT_VERSION,
       activeTabId: active?.tabId ?? null,
       activeSessionId: active?.sessionId ?? null,
       activeHere: active !== null && active.tabId === tab?.id,
       page,
       calibrationCompleted: profile.calibrationCompleted,
+      delfLevel: profile.delfLevel,
       globalAbility: profile.globalAbility,
       phase: summary.overallPhase,
       summary,
       provider: {
         configured: PROVIDER_CONFIGURED,
-        enabled: providerSettings.enabled,
+        enabled: PROVIDER_CONFIGURED,
         permissionGranted: await hasProviderPermission(),
         lastError: providerSettings.lastError,
       },
@@ -321,65 +342,45 @@ export default defineBackground(() => {
     return success({ reset: true });
   }
 
-  async function doSaveCalibration(globalAbility: number): Promise<Result<SaveCalibrationData>> {
+  async function doSaveCalibration(delfLevel: DelfLevel): Promise<Result<SaveCalibrationData>> {
     const loaded = await loadProfile(local);
     if (!loaded.ok) return loaded;
+
+    const globalAbility = abilityForDelfLevel(delfLevel);
 
     const saved = await saveProfile(local, {
       ...loaded.data.profile,
       calibrationCompleted: true,
+      delfLevel,
       globalAbility,
     });
     if (!saved.ok) return saved;
-    return success({ globalAbility });
+    return success({ globalAbility, delfLevel });
   }
 
   // -------------------------------------------------------------------------
-  // Optional provider
+  // Always-on provider
   // -------------------------------------------------------------------------
 
   /**
-   * Persist the optional-provider toggle.
-   *
-   * The permission prompt itself belongs to the popup — `permissions.request`
-   * needs a user gesture — so by the time this runs the grant has either
-   * happened or been refused. Enabling without the grant is refused here rather
-   * than stored and discovered later.
+   * Legacy message compatibility. AI generation is always enabled, so an old
+   * popup asking to disable it receives the actual, unchanged state.
    */
-  async function doSetProvider(enabled: boolean): Promise<Result<SetProviderData>> {
+  async function doSetProvider(_enabled: boolean): Promise<Result<SetProviderData>> {
     if (!PROVIDER_CONFIGURED) return failure('PROVIDER_DISABLED');
 
     const granted = await hasProviderPermission();
-    if (enabled && !granted) {
+    if (!granted) {
       await writeProviderSettings(local, {
-        enabled: false,
+        enabled: true,
         lastError: 'Permission for the local generation API was not granted.',
       });
       return failure('PROVIDER_PERMISSION_DENIED');
     }
 
-    if (!enabled && granted && !(await revokeProviderPermission())) {
-      return failure(
-        'PROVIDER_PERMISSION_DENIED',
-        'The optional local-server permission could not be removed.',
-      );
-    }
-
-    if (enabled) {
-      const health = await checkProviderHealth();
-      if (!health.ok) {
-        await revokeProviderPermission();
-        await writeProviderSettings(local, {
-          enabled: false,
-          lastError: health.error.message,
-        });
-        return health;
-      }
-    }
-
-    const written = await writeProviderSettings(local, { enabled, lastError: null });
+    const written = await writeProviderSettings(local, { enabled: true, lastError: null });
     if (!written.ok) return written;
-    return success({ enabled, permissionGranted: granted });
+    return success({ enabled: true, permissionGranted: granted });
   }
 
   async function hasProviderPermission(): Promise<boolean> {
@@ -394,8 +395,8 @@ export default defineBackground(() => {
   async function revokeProviderPermission(): Promise<boolean> {
     if (!PROVIDER_CONFIGURED) return true;
     try {
-      // The automated E2E manifest grants the loopback origin as a required,
-      // non-removable test permission. The production manifest never does.
+      // The loopback origin is a required, non-removable permission. Keep this
+      // branch for older development builds that still stored it as optional.
       if (browser.runtime.getManifest().host_permissions?.includes(PROVIDER_PERMISSION_PATTERN)) {
         return true;
       }
@@ -408,6 +409,7 @@ export default defineBackground(() => {
 
   async function doGenerateTraps(
     sessionId: string,
+    delfLevel: DelfLevel,
     sentences: { id: string; text: string }[],
     sender: Browser.runtime.MessageSender,
   ): Promise<Result<GenerateTrapsData>> {
@@ -417,20 +419,17 @@ export default defineBackground(() => {
       return failure('SESSION_REPLACED', 'This tab does not own the active Eclipse session.');
     }
 
-    const settings = await readProviderSettings(local);
-    if (!settings.enabled) return failure('PROVIDER_DISABLED');
-
     if (!(await hasProviderPermission())) {
       await writeProviderSettings(local, {
-        enabled: false,
+        enabled: true,
         lastError: 'Permission for the local generation API is not granted.',
       });
       return failure('PROVIDER_PERMISSION_DENIED');
     }
 
-    const result = await generateWithCache(sentences, local);
+    const result = await generateWithCache(sentences, delfLevel, local);
     await writeProviderSettings(local, {
-      enabled: settings.enabled,
+      enabled: true,
       lastError: result.ok ? null : result.error.message,
     });
 

@@ -2,6 +2,9 @@ node_modules
 .output
 .output-e2e
 .wxt
+dist
+.docs
+data/cache
 package-lock.json
 test-results
 playwright-report

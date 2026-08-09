@@ -13,15 +13,19 @@ import {
   predictCorrect,
   sigmoid,
 } from '@/domain/scoring';
-import { CALIBRATION_QUESTIONS, scoreCalibration, skippedCalibration } from '@/domain/calibration';
+import {
+  CALIBRATION_QUESTIONS,
+  knownLevelCalibration,
+  scoreCalibration,
+} from '@/domain/calibration';
 
 describe('calibration formula', () => {
   it('maps every possible score across the full range', () => {
-    // clamp((correct - 1.5) / 1.5, -1, 1)
     expect(calibrationAbility(0)).toBeCloseTo(-1, 10);
-    expect(calibrationAbility(1)).toBeCloseTo(-1 / 3, 10);
-    expect(calibrationAbility(2)).toBeCloseTo(1 / 3, 10);
-    expect(calibrationAbility(3)).toBeCloseTo(1, 10);
+    expect(calibrationAbility(2)).toBeCloseTo(-0.5, 10);
+    expect(calibrationAbility(4)).toBeCloseTo(0, 10);
+    expect(calibrationAbility(6)).toBeCloseTo(0.5, 10);
+    expect(calibrationAbility(8)).toBeCloseTo(1, 10);
   });
 
   it('clamps inputs outside the question count', () => {
@@ -29,36 +33,41 @@ describe('calibration formula', () => {
     expect(calibrationAbility(99)).toBe(GLOBAL_ABILITY_MAX);
   });
 
-  it('asks exactly three questions, in ascending difficulty', () => {
+  it('asks eight questions spanning A1 through B2', () => {
     expect(CALIBRATION_QUESTIONS).toHaveLength(CALIBRATION_QUESTION_COUNT);
-    expect(CALIBRATION_QUESTIONS.map((question) => question.targetSurface)).toEqual([
-      'bonjour',
-      'bibliothèque',
-      'avoir le cafard',
+    expect(CALIBRATION_QUESTIONS.map((question) => question.level)).toEqual([
+      'A1',
+      'A1',
+      'A2',
+      'A2',
+      'B1',
+      'B1',
+      'B2',
+      'B2',
     ]);
   });
 
-  it('offers the required distractors', () => {
-    const library = CALIBRATION_QUESTIONS[1];
-    expect(library?.choices).toContain('a bookstore');
-    const cafard = CALIBRATION_QUESTIONS[2];
-    expect(cafard?.choices).toContain('he saw a cockroach');
+  it('samples vocabulary, details, inference, and structure', () => {
+    expect(new Set(CALIBRATION_QUESTIONS.map((question) => question.skill))).toEqual(
+      new Set(['vocabulary', 'detail', 'inference', 'structure']),
+    );
   });
 
   it('scores a completed run', () => {
     const perfect = scoreCalibration(CALIBRATION_QUESTIONS.map((q) => q.acceptedChoice));
-    expect(perfect.correctAnswers).toBe(3);
-    expect(perfect.globalAbility).toBeCloseTo(1, 10);
+    expect(perfect.correctAnswers).toBe(8);
+    expect(perfect.delfLevel).toBe('B2');
 
-    const none = scoreCalibration(['x', 'y', 'z']);
+    const none = scoreCalibration(Array.from({ length: 8 }, () => 'x'));
     expect(none.correctAnswers).toBe(0);
-    expect(none.globalAbility).toBeCloseTo(-1, 10);
+    expect(none.delfLevel).toBe('A1');
   });
 
-  it('lands a skipped calibration at neutral ability', () => {
-    const skipped = skippedCalibration();
-    expect(skipped.globalAbility).toBe(0);
-    expect(skipped.completed).toBe(true);
+  it('maps a known level directly without claiming diagnostic answers', () => {
+    const selected = knownLevelCalibration('B1');
+    expect(selected.delfLevel).toBe('B1');
+    expect(selected.correctAnswers).toBe(0);
+    expect(selected.completed).toBe(true);
   });
 });
 
