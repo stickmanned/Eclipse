@@ -13,7 +13,7 @@ import {
   type SelectionCandidate,
   type SelectionContext,
 } from '@/domain/selection';
-import type { ConceptMastery } from '@/domain/profile';
+import { emptyMastery, type ConceptMastery } from '@/domain/profile';
 
 const NOW = new Date('2026-03-01T12:00:00.000Z');
 
@@ -39,12 +39,9 @@ function context(mastery: Record<string, ConceptMastery> = {}): SelectionContext
 
 function masteryRecord(overrides: Partial<ConceptMastery> = {}): ConceptMastery {
   return {
-    score: 0,
-    phase: 'crescent',
+    ...emptyMastery(NOW),
     attempts: 1,
     correct: 0,
-    due: { kind: 'none' },
-    updatedAt: NOW.toISOString(),
     ...overrides,
   };
 }
@@ -300,16 +297,28 @@ describe('DELF reading lens', () => {
     }),
   ];
 
-  it('keeps A1 highlights concrete and excludes advanced items', () => {
+  it('keeps A1 highlights strictly within A1 range (0-0.29)', () => {
     const chosen = selectCandidates(levels, { ...context(), delfLevel: 'A1' }, LIMITS);
-    expect(chosen.map((item) => item.trapId)).toEqual(expect.arrayContaining(['a1', 'a2']));
+    expect(chosen.map((item) => item.trapId)).toEqual(['a1']);
+    expect(chosen.map((item) => item.trapId)).not.toContain('a2');
+    expect(chosen.map((item) => item.trapId)).not.toContain('b1');
     expect(chosen.map((item) => item.trapId)).not.toContain('b2');
   });
 
-  it('keeps B2 highlights advanced and excludes beginner items', () => {
-    const chosen = selectCandidates(levels, { ...context(), delfLevel: 'B2' }, LIMITS);
-    expect(chosen.map((item) => item.trapId)).toEqual(expect.arrayContaining(['b1', 'b2']));
+  it('keeps B1 highlights strictly within B1 range (0.50-0.69)', () => {
+    const chosen = selectCandidates(levels, { ...context(), delfLevel: 'B1' }, LIMITS);
+    expect(chosen.map((item) => item.trapId)).toEqual(['b1']);
     expect(chosen.map((item) => item.trapId)).not.toContain('a1');
+    expect(chosen.map((item) => item.trapId)).not.toContain('a2');
+    expect(chosen.map((item) => item.trapId)).not.toContain('b2');
+  });
+
+  it('keeps B2 highlights strictly within B2 range (0.70-1.00)', () => {
+    const chosen = selectCandidates(levels, { ...context(), delfLevel: 'B2' }, LIMITS);
+    expect(chosen.map((item) => item.trapId)).toEqual(['b2']);
+    expect(chosen.map((item) => item.trapId)).not.toContain('a1');
+    expect(chosen.map((item) => item.trapId)).not.toContain('a2');
+    expect(chosen.map((item) => item.trapId)).not.toContain('b1');
   });
 });
 

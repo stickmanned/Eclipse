@@ -85,7 +85,11 @@ export const MODEL_OUTPUT_SCHEMA = {
             type: 'string',
             enum: ['vocabulary', 'phrase', 'polysemy', 'idiom', 'false_friend'],
           },
-          exactSourceText: { type: 'string' },
+          exactSourceText: {
+            type: 'string',
+            description:
+              'English text copied exactly from the supplied sentence. This is also the correct answer.',
+          },
           targetSurface: { type: 'string' },
           choices: {
             type: 'array',
@@ -97,7 +101,8 @@ export const MODEL_OUTPUT_SCHEMA = {
           },
           acceptedChoice: {
             type: 'string',
-            description: 'Exactly one of choices. English, like the rest of them.',
+            description:
+              'Must equal exactSourceText and one of choices exactly, anchoring the answer in English.',
           },
           clueSpan: { type: 'string' },
           explanation: { type: 'string' },
@@ -264,7 +269,12 @@ export function toContextTraps(
     // The learner reads English. Three French words is not a comprehension
     // question. `validateTrap` below refuses these too — this is here so the
     // rejection reads as itself in the log rather than as a generic failure.
-    if (findChoiceLanguageIssues(candidate.choices, candidate.targetSurface).length > 0) {
+    const acceptedChoiceIsEnglishSource =
+      foldForComparison(candidate.acceptedChoice) === foldForComparison(candidate.exactSourceText);
+    if (
+      !acceptedChoiceIsEnglishSource ||
+      findChoiceLanguageIssues(candidate.choices, candidate.targetSurface).length > 0
+    ) {
       rejected.push('choices_not_english');
       continue;
     }

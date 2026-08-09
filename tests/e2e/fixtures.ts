@@ -220,6 +220,7 @@ export const test = base.extend<EclipseFixtures, EclipseWorkerFixtures>({
           rateLimitAttempts = 0;
         },
       });
+      if (!server.listening) return;
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
       });
@@ -319,9 +320,9 @@ function genericModelOutput(request: ContextTrapsRequest): ModelOutput {
             ? (phraseSurfaces[index % phraseSurfaces.length] ?? 'tout au long de')
             : (wordSurfaces[index % wordSurfaces.length] ?? 'observer'),
           choices: usePhrase
-            ? ['the complete contextual phrase', 'only its first word', 'an unrelated expression']
-            : ['the contextual meaning', 'a tempting distractor', 'another distractor'],
-          acceptedChoice: usePhrase ? 'the complete contextual phrase' : 'the contextual meaning',
+            ? [exactSourceText, 'only its first word', 'an unrelated expression']
+            : [exactSourceText, 'a tempting distractor', 'another distractor'],
+          acceptedChoice: exactSourceText,
           clueSpan: clue[0],
           explanation: 'The French surface expresses the meaning selected by this context.',
           distractorExplanation: 'The alternative meaning does not fit the surrounding evidence.',

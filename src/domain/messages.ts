@@ -23,8 +23,17 @@ import {
   type Result,
   type Success,
 } from './errors';
-import { MOON_PHASES, type MasterySummary, type MoonPhase } from './profile';
+import {
+  MOON_PHASES,
+  type ConceptMastery,
+  type MasterySummary,
+  type MoonPhase,
+  type ReviewMode,
+  type VocabularyDisplay,
+  type VocabularyItem,
+} from './profile';
 import type { GeneratedTrapCandidate } from './trap';
+import { CONCEPT_ID_PATTERN, type ConceptId } from './trap';
 import { DELF_LEVELS, type DelfLevel } from './delf';
 
 export const MESSAGE_TYPES = [
@@ -35,6 +44,7 @@ export const MESSAGE_TYPES = [
   'DEACTIVATE',
   'GET_STATUS',
   'GENERATE_TRAPS',
+  'RECORD_ANSWER',
   'RESET_PROFILE',
   'SAVE_CALIBRATION',
   'SET_PROVIDER',
@@ -51,8 +61,10 @@ export type MessageType = (typeof MESSAGE_TYPES)[number];
  *
  * v2: SAVE_CALIBRATION carries `delfLevel`/`method` rather than
  *     `globalAbility`/`skipped`, and GENERATE_TRAPS carries `delfLevel`.
+ * v3: GET_STATUS includes bounded learner-facing vocabulary rows.
+ * v4: RECORD_ANSWER centralizes contextual and popup-practice persistence.
  */
-export const MESSAGE_CONTRACT_VERSION = 2;
+export const MESSAGE_CONTRACT_VERSION = 4;
 
 // ---------------------------------------------------------------------------
 // Payloads
@@ -95,6 +107,18 @@ export interface GenerateTrapsMessage {
   sentences: { id: string; text: string }[];
 }
 
+export interface RecordAnswerMessage {
+  type: 'RECORD_ANSWER';
+  interactionId: string;
+  conceptId: ConceptId;
+  difficulty: number;
+  correct: boolean;
+  assisted: boolean;
+  mode: ReviewMode;
+  contextFingerprint?: string;
+  display: VocabularyDisplay;
+}
+
 export interface ResetProfileMessage {
   type: 'RESET_PROFILE';
   /** Must be `true`. Guards against an accidental send. */
@@ -121,6 +145,7 @@ export type EclipseMessage =
   | DeactivateMessage
   | GetStatusMessage
   | GenerateTrapsMessage
+  | RecordAnswerMessage
   | ResetProfileMessage
   | SaveCalibrationMessage
   | SetProviderMessage;
@@ -172,6 +197,7 @@ export interface StatusData {
   globalAbility: number;
   phase: MoonPhase;
   summary: MasterySummary;
+  vocabulary: VocabularyItem[];
   provider: {
     /** True once a server origin has been configured at build time. */
     configured: boolean;
@@ -184,6 +210,14 @@ export interface StatusData {
 
 export interface GenerateTrapsData {
   candidates: GeneratedTrapCandidate[];
+}
+
+export interface RecordAnswerData {
+  interactionId: string;
+  applied: boolean;
+  previousPhase: MoonPhase;
+  phase: MoonPhase;
+  mastery: ConceptMastery;
 }
 
 export interface ResetProfileData {
@@ -209,6 +243,7 @@ export interface MessageResponseMap {
   DEACTIVATE: DeactivatedData;
   GET_STATUS: StatusData;
   GENERATE_TRAPS: GenerateTrapsData;
+  RECORD_ANSWER: RecordAnswerData;
   RESET_PROFILE: ResetProfileData;
   SAVE_CALIBRATION: SaveCalibrationData;
   SET_PROVIDER: SetProviderData;
@@ -237,6 +272,24 @@ export const eclipseMessageSchema: z.ZodType<EclipseMessage> = z.discriminatedUn
     reason: z.enum(['user', 'replaced', 'reset']).optional(),
   }),
   z.object({ type: z.literal('GET_STATUS') }),
+  z.object({
+    type: z.literal('RECORD_ANSWER'),
+    interactionId: z.string().min(1).max(120),
+    conceptId: z
+      .string()
+      .regex(CONCEPT_ID_PATTERN)
+      .transform((value) => value as ConceptId),
+    difficulty: z.number().min(0).max(1),
+    correct: z.boolean(),
+    assisted: z.boolean(),
+    mode: z.enum(['context-choice', 'typed-meaning', 'bare-recall']),
+    contextFingerprint: z.string().min(1).max(120).optional(),
+    display: z.object({
+      targetSurface: z.string().trim().min(1).max(120),
+      englishMeaning: z.string().trim().min(1).max(240),
+      kind: z.enum(['word', 'phrase']),
+    }),
+  }),
   z.object({
     type: z.literal('GENERATE_TRAPS'),
     sessionId: z.string().min(1),

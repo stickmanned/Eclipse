@@ -18,7 +18,7 @@ import type { OverlayStore } from '../content/overlay-store';
 import { chromeArea } from '../storage/area';
 import { failure, success, type Result } from '../domain/errors';
 import type { GeneratedTrapCandidate } from '../domain/trap';
-import { describeRejectedMessage, parseMessage } from '../domain/messages';
+import { describeRejectedMessage, parseMessage, type RecordAnswerData } from '../domain/messages';
 
 const TOKEN_STYLE_ID = 'eclipse-token-styles';
 
@@ -37,6 +37,21 @@ export default defineContentScript({
 
     const session = new ContentSession(document, {
       storage: chromeArea(browser.storage.local),
+
+      async recordAnswer(answer) {
+        try {
+          const response: unknown = await browser.runtime.sendMessage({
+            type: 'RECORD_ANSWER',
+            ...answer,
+          });
+          if (response && typeof response === 'object' && 'ok' in response) {
+            return response as Result<RecordAnswerData>;
+          }
+          return failure('STORAGE_ERROR', 'No answer from the Eclipse progress writer.');
+        } catch {
+          return failure('STORAGE_ERROR', 'Could not reach the Eclipse progress writer.');
+        }
+      },
 
       installTokenStyles(doc) {
         if (doc.getElementById(TOKEN_STYLE_ID)) return () => undefined;

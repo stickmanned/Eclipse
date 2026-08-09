@@ -15,16 +15,29 @@ import { failure, success, type Result } from '@/domain/errors';
 import type { ContextTrap, GeneratedTrapCandidate } from '@/domain/trap';
 import type { DelfLevel } from '@/domain/delf';
 import { flush, loadDemo, renderHtml } from './helpers';
+import { persistAnswer } from '@/storage/profile-store';
 
 function hostWith(
   requestGeneratedTraps?: SessionHost['requestGeneratedTraps'],
 ): SessionHost & { sentences: ProviderSentence[][]; sessionIds: string[] } {
   const sentences: ProviderSentence[][] = [];
   const sessionIds: string[] = [];
+  const storage = memoryArea();
   return {
     sentences,
     sessionIds,
-    storage: memoryArea(),
+    storage,
+    async recordAnswer(answer) {
+      const result = await persistAnswer(storage, { ...answer, now: new Date() });
+      if (!result.ok) return result;
+      return success({
+        interactionId: answer.interactionId,
+        applied: result.data.applied,
+        previousPhase: result.data.previousPhase,
+        phase: result.data.phase,
+        mastery: result.data.mastery,
+      });
+    },
     mountOverlay(_store: OverlayStore, _callbacks: OverlayCallbacks) {
       return () => undefined;
     },
@@ -68,12 +81,12 @@ function generatedFor(sentenceId: string, sentence: string): GeneratedTrapCandid
     sentence,
     exactSourceText: source,
     targetSurface: 'observer',
-    choices: ['the contextual meaning', 'a tempting distractor', 'another distractor'],
-    acceptedChoice: 'the contextual meaning',
+    choices: [source, 'a tempting distractor', 'another distractor'],
+    acceptedChoice: source,
     clueSpan: sentence.slice(clueStart, clueEnd),
     explanation: 'The French surface carries the contextual meaning here.',
     distractorExplanation: 'The tempting alternative does not fit the surrounding evidence.',
-    difficulty: 0.35,
+    difficulty: 0.6,
     confidence: 0.95,
     provider: 'gemini',
   };

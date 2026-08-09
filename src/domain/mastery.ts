@@ -2,21 +2,27 @@
  * Applying an answer to the learner profile.
  *
  * This is the single place where scoring, phase and scheduling meet. The
- * content script is the only caller — see docs/ARCHITECTURE.md on why answer
- * outcomes have exactly one writer.
+ * background worker is the durable writer — see docs/ARCHITECTURE.md on why
+ * answer outcomes have exactly one persistence seam.
  */
 
 import {
   RECENT_OUTCOMES_LIMIT,
+  REVIEW_EVENT_LIMIT,
+  SUCCESSFUL_REVIEW_DAY_LIMIT,
+  CONTEXT_FINGERPRINT_LIMIT,
   emptyMastery,
   pruneMastery,
   type AnswerOutcome,
   type ConceptMastery,
   type LearnerProfile,
   type MoonPhase,
+  type ReviewMode,
+  type ReviewEvent,
+  type VocabularyDisplay,
 } from './profile';
 import { applyAnswer, phaseFor } from './scoring';
-import { isDue, nextDueState } from './scheduling';
+import { scheduleAnswer } from './scheduling';
 import type { ConceptId } from './trap';
 
 export interface RecordAnswerInput {
@@ -26,6 +32,10 @@ export interface RecordAnswerInput {
   readonly difficulty: number;
   readonly correct: boolean;
   readonly now: Date;
+  readonly display?: VocabularyDisplay;
+  readonly assisted: boolean;
+  readonly mode: ReviewMode;
+  readonly contextFingerprint?: string;
 }
 
 export interface RecordAnswerResult {
@@ -47,7 +57,18 @@ export interface RecordAnswerResult {
  * guarantee survives a reload; `recentOutcomes` alone is only five deep.
  */
 export function recordAnswer(input: RecordAnswerInput): RecordAnswerResult {
-  const { profile, interactionId, conceptId, difficulty, correct, now } = input;
+  const {
+    profile,
+    interactionId,
+    conceptId,
+    difficulty,
+    correct,
+    now,
+    display,
+    assisted,
+    mode,
+    contextFingerprint,
+  } = input;
 
   const existing = profile.mastery[conceptId];
   const previousPhase = existing?.phase ?? 'new_moon';
@@ -67,8 +88,6 @@ export function recordAnswer(input: RecordAnswerInput): RecordAnswerResult {
   }
 
   const base = existing ?? emptyMastery(now);
-  const wasDue = isDue(existing, now);
-
   const update = applyAnswer({
     globalAbility: profile.globalAbility,
     conceptScore: base.score,
@@ -78,14 +97,60 @@ export function recordAnswer(input: RecordAnswerInput): RecordAnswerResult {
 
   const attempts = base.attempts + 1;
   const correctCount = base.correct + (correct ? 1 : 0);
+  const schedule = scheduleAnswer(existing, correct, assisted, now);
+  // v1 Half/Full records predate the typed-practice counter. Seed their
+  // minimum earned count once so an upgrade never erases visible mastery.
+  const legacyFloor = base.legacyPhase
+    ? base.phase === 'full'
+      ? 3
+      : base.phase === 'half'
+        ? 1
+        : 0
+    : 0;
+  const typedPracticeCorrect = correct && !assisted && mode === 'typed-meaning';
+  const unassistedCorrect =
+    Math.max(base.unassistedCorrect, legacyFloor) + (typedPracticeCorrect ? 1 : 0);
+  const reviewDay = now.toISOString().slice(0, 10);
+  const successfulReviewDays = schedule.creditedRecall
+    ? [...new Set([...base.successfulReviewDays, reviewDay])].slice(-SUCCESSFUL_REVIEW_DAY_LIMIT)
+    : base.successfulReviewDays;
+  const contextFingerprints = contextFingerprint
+    ? [...new Set([...base.contextFingerprints, contextFingerprint])].slice(
+        -CONTEXT_FINGERPRINT_LIMIT,
+      )
+    : base.contextFingerprints;
+  const event: ReviewEvent = {
+    interactionId,
+    reviewedAt: now.toISOString(),
+    correct,
+    assisted,
+    mode,
+    scheduled: schedule.scheduled,
+    schedulerRating: schedule.rating,
+    contextFingerprint,
+  };
+  const reviewEvents = [...base.reviewEvents, event].slice(-REVIEW_EVENT_LIMIT);
+  // Recognition introduces the item at Crescent. Only correct typed practice
+  // advances the monotonic learner-facing mastery count.
+  const phase = phaseFor(unassistedCorrect);
 
   const mastery: ConceptMastery = {
     score: update.conceptScore,
-    phase: phaseFor(update.conceptScore, attempts, correctCount),
+    phase,
     attempts,
     correct: correctCount,
-    due: nextDueState(existing, correct, wasDue, now),
+    intervalDays: schedule.intervalDays,
+    unassistedCorrect,
+    lapses: base.lapses + (correct ? 0 : 1),
+    fsrsCard: schedule.fsrsCard,
+    firstAnsweredAt: existing?.firstAnsweredAt ?? now.toISOString(),
+    successfulReviewDays,
+    contextFingerprints,
+    reviewEvents,
+    legacyPhase: undefined,
+    due: schedule.due,
     updatedAt: now.toISOString(),
+    display: display ?? existing?.display,
   };
 
   const outcome: AnswerOutcome = {

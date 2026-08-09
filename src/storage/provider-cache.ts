@@ -15,7 +15,7 @@ import type { Result } from '../domain/errors';
 import { success } from '../domain/errors';
 
 export const PROVIDER_CACHE_LIMIT = 100;
-export const PROVIDER_CACHE_SCOPE = `source=en|target=fr-FR|provider=gemini|model=${PROVIDER_MODEL}|prompt=v2|schema=v2`;
+export const PROVIDER_CACHE_SCOPE = `source=en|target=fr-FR|provider=gemini|model=${PROVIDER_MODEL}|prompt=v3|schema=v3`;
 
 interface CacheEntry {
   /** Millisecond timestamp of the most recent read or write. */

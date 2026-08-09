@@ -209,6 +209,21 @@ describe('every catalog entry produces a valid trap', () => {
       ['fr:rester:stay', 'They chose to stay at home until the water went down.'],
       ['fr:sensible:sensitive', 'He is sensitive to criticism of the new layout.'],
       ['fr:blesse:injured', 'A volunteer was injured in the crash that closed the road.'],
+      [
+        'fr:deception:disappointment',
+        'The result brought a sense of disappointment after losing the final.',
+      ],
+      ['fr:eventuellement:possibly', 'We could possibly attend if time allows.'],
+      [
+        'fr:dailleurs:besides',
+        'He mentioned in addition that besides the main point there was more.',
+      ],
+      ['fr:en-fait:in-fact', 'The truth is that in fact it was different.'],
+      ['fr:resumer:summarize', 'She gave a report in a few words to summarize the main points.'],
+      [
+        'fr:quitte-a:even-if-it-means',
+        'He was willing to work late even if it means taking a risk.',
+      ],
     ];
 
     expect(cases).toHaveLength(FRENCH_CATALOG.length);

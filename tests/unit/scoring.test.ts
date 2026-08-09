@@ -171,37 +171,12 @@ describe('mastery update', () => {
 });
 
 describe('moon phase thresholds', () => {
-  it('reports new_moon with no attempts, whatever the score', () => {
-    expect(phaseFor(0, 0, 0)).toBe('new_moon');
-    expect(phaseFor(2, 0, 0)).toBe('new_moon');
-  });
-
-  it('reports new_moon below -0.5', () => {
-    expect(phaseFor(-0.51, 3, 0)).toBe('new_moon');
-    expect(phaseFor(-2, 5, 1)).toBe('new_moon');
-  });
-
-  it('reports crescent from -0.5 up to 0.5', () => {
-    expect(phaseFor(-0.5, 1, 0)).toBe('crescent');
-    expect(phaseFor(0, 1, 0)).toBe('crescent');
-    expect(phaseFor(0.49, 1, 0)).toBe('crescent');
-  });
-
-  it('reports half from 0.5 up to 1.25', () => {
-    expect(phaseFor(0.5, 1, 1)).toBe('half');
-    expect(phaseFor(1.24, 2, 2)).toBe('half');
-  });
-
-  it('reports full at 1.25 with at least three attempts and two correct', () => {
-    expect(phaseFor(1.25, 3, 2)).toBe('full');
-    expect(phaseFor(2, 10, 9)).toBe('full');
-  });
-
-  it('holds a high score at half without the evidence behind it', () => {
-    // One lucky guess must never fill the moon.
-    expect(phaseFor(1.5, 1, 1)).toBe('half');
-    expect(phaseFor(1.5, 3, 1)).toBe('half');
-    expect(phaseFor(1.5, 2, 2)).toBe('half');
+  it('uses one successful typed practice for Half and three for Full', () => {
+    expect(phaseFor(0)).toBe('crescent');
+    expect(phaseFor(1)).toBe('half');
+    expect(phaseFor(2)).toBe('half');
+    expect(phaseFor(3)).toBe('full');
+    expect(phaseFor(20)).toBe('full');
   });
 });
 

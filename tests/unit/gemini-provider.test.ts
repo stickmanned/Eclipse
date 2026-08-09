@@ -134,6 +134,10 @@ describe('Gemini provider boundary', () => {
     });
     expect(sent.request.response_format.schema).toBeDefined();
     expect(sent.request.system_instruction).toContain('UNTRUSTED DATA');
+    expect(sent.request.system_instruction).toMatch(
+      /acceptedChoice must equal\s+exactSourceText exactly/,
+    );
+    expect(sent.request.system_instruction).toContain('faire face à');
     expect(sent.options?.fetchOptions?.signal).toBeInstanceOf(AbortSignal);
     expect(sent.request).not.toHaveProperty('tools');
     expect(sent.request).not.toHaveProperty('generation_config');

@@ -1,40 +1,60 @@
 /**
- * The Eclipse visual system, as a CSS string.
- *
- * Shipped as a string rather than an imported stylesheet on purpose: it lets
- * the ShadowRoot be built with `cssInjectionMode` left alone, which means no
- * `web_accessible_resources` entry and therefore no host permission of any
- * kind. See wxt.config.ts.
- *
- * Everything is in pixels. `rem` would inherit the host page's root font size
- * straight through the shadow boundary, and Eclipse has to look the same on a
- * page that sets `html { font-size: 8px }`.
+ * Celestial Gold & Cosmic Indigo theme for the Shadow DOM overlay and the
+ * host-page token pills. Pixel units keep it independent of host root styles.
  */
 
 export const COLORS = {
-  background: '#0B1020',
+  background: '#070A14',
+  orbit: '#11182C',
+  orbitDeep: '#0C1122',
+  token: '#1A1438',
+  tokenHover: '#241B54',
   gold: '#F7C948',
+  goldHigh: '#F9D76E',
   violet: '#8B5CF6',
+  violetHigh: '#A78BFA',
   correct: '#2DD4BF',
   incorrect: '#FB7185',
   text: '#F8FAFC',
+  textSoft: '#CBD5E1',
+  muted: '#94A3B8',
 } as const;
 
-/** Reveal duration, skipped under `prefers-reduced-motion`. */
-export const REVEAL_MS = 180;
+export const REVEAL_MS = 220;
 
 export const OVERLAY_CSS = `
 :host {
-  /* WXT already applies all:initial. These are ours. */
-  --eclipse-bg: ${COLORS.background};
+  --eclipse-cosmic: ${COLORS.background};
+  --eclipse-orbit: ${COLORS.orbit};
+  --eclipse-orbit-deep: ${COLORS.orbitDeep};
   --eclipse-gold: ${COLORS.gold};
+  --eclipse-gold-high: ${COLORS.goldHigh};
+  --eclipse-gold-soft: rgba(247, 201, 72, 0.13);
+  --eclipse-gold-line: rgba(247, 201, 72, 0.32);
   --eclipse-violet: ${COLORS.violet};
+  --eclipse-violet-high: ${COLORS.violetHigh};
+  --eclipse-violet-soft: rgba(139, 92, 246, 0.14);
   --eclipse-correct: ${COLORS.correct};
+  --eclipse-correct-soft: rgba(45, 212, 191, 0.13);
   --eclipse-incorrect: ${COLORS.incorrect};
+  --eclipse-incorrect-soft: rgba(251, 113, 133, 0.13);
   --eclipse-text: ${COLORS.text};
-  --eclipse-muted: #E2E8F0;
-  --eclipse-line: #2A3350;
+  --eclipse-text-soft: ${COLORS.textSoft};
+  --eclipse-muted: ${COLORS.muted};
+  --eclipse-line: rgba(148, 163, 184, 0.2);
+  --eclipse-line-strong: rgba(148, 163, 184, 0.34);
+  --eclipse-glass: rgba(18, 24, 43, 0.92);
+  --eclipse-glass-soft: rgba(248, 250, 252, 0.045);
+  --eclipse-shadow-card: 0 28px 80px rgba(0, 0, 0, 0.62), inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  --eclipse-shadow-gold: 0 0 28px rgba(247, 201, 72, 0.2);
+  --eclipse-font-display: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
+  --eclipse-font-body: 'Avenir Next', Avenir, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --eclipse-font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  --eclipse-transition: 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+
+.eclipse-root,
+.eclipse-root * { box-sizing: border-box; }
 
 .eclipse-root {
   position: fixed;
@@ -44,40 +64,64 @@ export const OVERLAY_CSS = `
   align-items: center;
   justify-content: center;
   padding: 24px;
-  box-sizing: border-box;
-  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 1.5;
   color: var(--eclipse-text);
+  font-family: var(--eclipse-font-body);
+  font-size: 15px;
+  line-height: 1.48;
 }
 
 .eclipse-scrim {
   position: absolute;
   inset: 0;
-  background: rgba(4, 7, 18, 0.7);
-  /* The host page can be any colour; a real scrim is what guarantees contrast. */
-  backdrop-filter: blur(12px);
+  background:
+    radial-gradient(circle at 50% 42%, rgba(139, 92, 246, 0.13), transparent 38%),
+    rgba(3, 5, 12, 0.76);
+  backdrop-filter: blur(14px) saturate(0.8);
 }
 
 .eclipse-card {
   position: relative;
   width: 100%;
-  max-width: 460px;
+  max-width: 520px;
   max-height: calc(100vh - 48px);
+  overflow-x: hidden;
   overflow-y: auto;
-  background: linear-gradient(135deg, rgba(27, 36, 64, 0.88), rgba(15, 23, 42, 0.94));
-  border: 1px solid rgba(247, 201, 72, 0.25);
-  border-radius: 16px;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(139, 92, 246, 0.2);
-  backdrop-filter: blur(16px);
-  padding: 24px;
-  box-sizing: border-box;
-  animation: eclipse-rise ${REVEAL_MS}ms ease-out;
+  padding: 22px;
+  border: 1px solid var(--eclipse-gold-line);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 105% -5%, var(--eclipse-violet-soft), transparent 30%),
+    linear-gradient(155deg, var(--eclipse-glass), rgba(7, 10, 20, 0.97));
+  box-shadow: var(--eclipse-shadow-card), var(--eclipse-shadow-gold);
+  backdrop-filter: blur(20px);
+  scrollbar-color: var(--eclipse-line-strong) transparent;
+  animation: eclipse-rise ${REVEAL_MS}ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.eclipse-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 20% auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--eclipse-gold-high), transparent);
+  box-shadow: var(--eclipse-shadow-gold);
+}
+
+.eclipse-card::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  width: 190px;
+  height: 190px;
+  top: -124px;
+  right: -94px;
+  border: 1px solid var(--eclipse-line);
+  border-radius: 50%;
 }
 
 @keyframes eclipse-rise {
-  from { opacity: 0; transform: scale(0.97) translateY(6px); }
-  to   { opacity: 1; transform: scale(1) translateY(0); }
+  from { opacity: 0; transform: translateY(10px) scale(0.975); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .eclipse-header {
@@ -85,361 +129,366 @@ export const OVERLAY_CSS = `
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 16px;
+  min-height: 34px;
+  margin-bottom: 14px;
+}
+
+.eclipse-command { display: flex; align-items: center; gap: 9px; }
+
+.eclipse-command-orbit {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--eclipse-gold-line);
+  border-radius: 50%;
+  box-shadow: var(--eclipse-shadow-gold);
+}
+
+.eclipse-command-orbit::before {
+  content: '';
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  inset: 5px;
+  border-radius: 50%;
+  background: var(--eclipse-gold);
+}
+
+.eclipse-command-orbit::after {
+  content: '';
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  top: 4px;
+  left: 10px;
+  border-radius: 50%;
+  background: var(--eclipse-orbit);
 }
 
 .eclipse-eyebrow {
   margin: 0;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--eclipse-gold);
+  font-family: var(--eclipse-font-mono);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .eclipse-close {
+  display: inline-grid;
+  place-items: center;
   flex: 0 0 auto;
-  min-width: 40px;
-  min-height: 40px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(27, 36, 64, 0.5);
-  color: var(--eclipse-muted);
-  border: 1px solid rgba(139, 92, 246, 0.3);
+  min-width: 34px;
+  min-height: 34px;
+  border: 1px solid var(--eclipse-line);
   border-radius: 10px;
-  font-size: 18px;
-  line-height: 1;
+  background: var(--eclipse-glass-soft);
+  color: var(--eclipse-muted);
+  font: inherit;
+  font-size: 14px;
   cursor: pointer;
-  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+  transition: color var(--eclipse-transition), border-color var(--eclipse-transition), background var(--eclipse-transition);
 }
 
-.eclipse-close:hover { color: #FFFFFF; border-color: var(--eclipse-gold); background: rgba(139, 92, 246, 0.2); }
+.eclipse-close:hover { border-color: var(--eclipse-gold); background: var(--eclipse-gold-soft); color: var(--eclipse-gold-high); }
+
+.eclipse-surface-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 6px;
+}
 
 .eclipse-surface {
-  margin: 0 0 8px;
-  font-size: 30px;
+  min-width: 0;
+  margin: 0;
+  color: var(--eclipse-gold-high);
+  font-family: var(--eclipse-font-display);
+  font-size: 34px;
   font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--eclipse-gold);
-  text-shadow: 0 2px 8px rgba(247, 201, 72, 0.25);
+  letter-spacing: -0.035em;
+  line-height: 1.1;
   overflow-wrap: anywhere;
+  text-shadow: var(--eclipse-shadow-gold);
 }
 
-.eclipse-question {
-  margin: 0 0 16px;
-  font-size: 15px;
-  color: #E2E8F0;
+.eclipse-speak {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  border-radius: 10px;
+  background: rgba(139, 92, 246, 0.18);
+  color: var(--eclipse-gold);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
 }
+
+.eclipse-speak:hover { border-color: var(--eclipse-gold); background: rgba(139, 92, 246, 0.3); }
+.eclipse-speak:active { transform: scale(0.94); }
+.eclipse-speak:focus-visible { outline: 2px solid var(--eclipse-gold); outline-offset: 2px; }
+
+.eclipse-question { margin: 0 0 15px; color: var(--eclipse-text-soft); font-size: 13px; }
 
 .eclipse-sentence {
-  margin: 0 0 20px;
+  margin: 0 0 17px;
   padding: 12px 14px;
-  background: rgba(139, 92, 246, 0.15);
+  border: 1px solid var(--eclipse-line);
   border-left: 3px solid var(--eclipse-violet);
-  border-radius: 0 10px 10px 0;
+  border-radius: 3px 12px 12px 3px;
+  background: var(--eclipse-violet-soft);
+  color: var(--eclipse-text-soft);
+  font-family: var(--eclipse-font-display);
   font-size: 15px;
-  color: var(--eclipse-text);
-  backdrop-filter: blur(4px);
+  line-height: 1.52;
 }
 
 .eclipse-sentence mark {
-  background: rgba(247, 201, 72, 0.25);
-  color: var(--eclipse-gold);
-  font-weight: 700;
-  padding: 1px 5px;
+  padding: 1px 4px;
   border-radius: 4px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  background: var(--eclipse-gold-soft);
+  color: var(--eclipse-gold-high);
+  font-weight: 700;
 }
 
 .eclipse-choices {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin: 0 0 4px;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .eclipse-choice {
-  width: 100%;
-  min-height: 44px;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
-  background: rgba(27, 36, 64, 0.6);
-  backdrop-filter: blur(8px);
-  color: var(--eclipse-text);
-  border: 1px solid rgba(139, 92, 246, 0.3);
+  width: 100%;
+  min-height: 46px;
+  padding: 9px 11px;
+  border: 1px solid var(--eclipse-line);
   border-radius: 12px;
+  background: var(--eclipse-glass-soft);
+  color: var(--eclipse-text);
   font: inherit;
-  font-size: 15px;
+  font-size: 14px;
   text-align: left;
   cursor: pointer;
-  transition: border-color 150ms ease, background 150ms ease, transform 80ms ease, box-shadow 150ms ease;
+  transition: transform var(--eclipse-transition), border-color var(--eclipse-transition), background var(--eclipse-transition), box-shadow var(--eclipse-transition);
 }
 
 .eclipse-choice:hover:not(:disabled) {
   border-color: var(--eclipse-gold);
-  background: rgba(139, 92, 246, 0.22);
-  box-shadow: 0 0 12px rgba(139, 92, 246, 0.2);
+  background: linear-gradient(90deg, var(--eclipse-gold-soft), var(--eclipse-violet-soft));
+  box-shadow: var(--eclipse-shadow-gold);
+  transform: translateY(-1px);
 }
 
+.eclipse-choice:active:not(:disabled) { transform: translateY(1px); }
 .eclipse-choice:disabled { cursor: default; }
 
-.eclipse-choice-key {
-  flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(139, 92, 246, 0.25);
-  border: 1px solid rgba(167, 139, 250, 0.4);
-  border-radius: 6px;
-  font-weight: 800;
-  font-size: 12px;
+.eclipse-choice-key,
+.eclipse-shortcuts kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 25px;
+  height: 25px;
+  padding: 0 5px;
+  border: 1px solid var(--eclipse-line-strong);
+  border-radius: 7px;
+  background: var(--eclipse-orbit);
   color: var(--eclipse-gold);
+  font-family: var(--eclipse-font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.28);
 }
 
-.eclipse-choice[data-state='correct'] {
-  border-color: var(--eclipse-correct);
-  background: rgba(45, 212, 191, 0.2);
-  box-shadow: 0 0 14px rgba(45, 212, 191, 0.25);
-}
-
-.eclipse-choice[data-state='incorrect'] {
-  border-color: var(--eclipse-incorrect);
-  background: rgba(251, 113, 133, 0.2);
-  box-shadow: 0 0 14px rgba(251, 113, 133, 0.25);
-}
-
-/* Correctness is never colour alone: every state also carries a glyph and a word. */
-.eclipse-choice-mark {
-  margin-left: auto;
-  font-size: 13px;
-  font-weight: 700;
-}
-
+.eclipse-choice[data-state='correct'] { border-color: var(--eclipse-correct); background: var(--eclipse-correct-soft); box-shadow: 0 0 16px var(--eclipse-correct-soft); }
+.eclipse-choice[data-state='incorrect'] { border-color: var(--eclipse-incorrect); background: var(--eclipse-incorrect-soft); box-shadow: 0 0 16px var(--eclipse-incorrect-soft); }
+.eclipse-choice-mark { margin-left: auto; font-size: 11px; font-weight: 750; }
 .eclipse-choice[data-state='correct'] .eclipse-choice-mark { color: var(--eclipse-correct); }
 .eclipse-choice[data-state='incorrect'] .eclipse-choice-mark { color: var(--eclipse-incorrect); }
+
+.eclipse-shortcuts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 13px;
+  margin-top: 10px;
+  color: var(--eclipse-muted);
+  font-family: var(--eclipse-font-mono);
+  font-size: 9px;
+}
+
+.eclipse-shortcuts span { display: flex; align-items: center; gap: 5px; }
+.eclipse-shortcuts kbd { min-width: 22px; height: 20px; padding-inline: 4px; font-size: 8px; }
 
 .eclipse-verdict {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 0 0 16px;
-  font-size: 17px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid currentColor;
+  border-radius: 12px;
+  font-family: var(--eclipse-font-display);
+  font-size: 20px;
   font-weight: 700;
+  animation: verdict-arrive 300ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-.eclipse-verdict[data-correct='true'] { color: var(--eclipse-correct); }
-.eclipse-verdict[data-correct='false'] { color: var(--eclipse-incorrect); }
+@keyframes verdict-arrive { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
+.eclipse-verdict[data-correct='true'] { background: var(--eclipse-correct-soft); color: var(--eclipse-correct); }
+.eclipse-verdict[data-correct='false'] { background: var(--eclipse-incorrect-soft); color: var(--eclipse-incorrect); }
+.eclipse-verdict-glyph { display: inline-grid; place-items: center; width: 27px; height: 27px; border: 2px solid currentColor; border-radius: 50%; font-family: var(--eclipse-font-body); font-size: 13px; }
 
-.eclipse-verdict-glyph {
-  width: 26px;
-  height: 26px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  border: 2px solid currentColor;
-  font-size: 14px;
-}
-
-.eclipse-section { margin: 0 0 14px; }
-
-.eclipse-section-label {
-  margin: 0 0 4px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #A78BFA;
-}
-
-.eclipse-section-body { margin: 0; font-size: 14px; color: var(--eclipse-text); }
-
-.eclipse-clue {
-  display: inline-block;
-  padding: 2px 8px;
-  background: rgba(247, 201, 72, 0.18);
-  border: 1px dashed rgba(247, 201, 72, 0.6);
-  border-radius: 999px;
-  color: var(--eclipse-gold);
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.eclipse-phase {
-  display: flex;
+.eclipse-translation-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 12px;
-  margin: 18px 0 0;
-  padding: 12px 14px;
-  border: 1px solid rgba(139, 92, 246, 0.35);
-  border-radius: 12px;
-  backdrop-filter: blur(8px);
-  background: rgba(139, 92, 246, 0.12);
+  margin-bottom: 12px;
+  padding: 13px;
+  border: 1px solid var(--eclipse-gold-line);
+  border-radius: 14px;
+  background: linear-gradient(110deg, var(--eclipse-gold-soft), var(--eclipse-glass-soft) 50%, var(--eclipse-violet-soft));
 }
 
-.eclipse-phase-text { margin: 0; font-size: 13px; color: #E2E8F0; }
-.eclipse-phase-name { color: var(--eclipse-gold); font-weight: 700; }
+.eclipse-translation-pair .eclipse-surface-row { margin: 2px 0 0; }
+.eclipse-translation-pair .eclipse-surface { font-size: 25px; }
+.eclipse-translation-arrow { color: var(--eclipse-gold); font-family: var(--eclipse-font-mono); }
+.eclipse-translation { margin: 2px 0 0; color: var(--eclipse-text); font-family: var(--eclipse-font-display); font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
 
-.eclipse-note {
-  margin: 12px 0 0;
-  font-size: 13px;
-  color: #E2E8F0;
-}
+.eclipse-section { margin: 0; }
+.eclipse-section-label { margin: 0 0 4px; color: var(--eclipse-violet-high); font-family: var(--eclipse-font-mono); font-size: 9px; font-weight: 750; letter-spacing: 0.1em; text-transform: uppercase; }
+.eclipse-section-body { margin: 0; color: var(--eclipse-text-soft); font-size: 12px; }
 
+.eclipse-reason-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.eclipse-reason-grid .eclipse-section { padding: 10px 11px; border: 1px solid var(--eclipse-line); border-radius: 11px; background: var(--eclipse-glass-soft); }
+.eclipse-reason-grid .eclipse-section[data-kind='why'] { border-top-color: var(--eclipse-correct); }
+.eclipse-reason-grid .eclipse-section[data-kind='why-not'] { border-top-color: var(--eclipse-incorrect); }
+
+.eclipse-phase { display: flex; align-items: center; gap: 11px; margin-top: 12px; padding: 10px 11px; border: 1px solid var(--eclipse-violet); border-radius: 12px; background: var(--eclipse-violet-soft); }
+.eclipse-phase-text { margin: 0; color: var(--eclipse-text-soft); font-size: 11px; }
+.eclipse-phase-name { color: var(--eclipse-gold-high); font-weight: 750; }
+.eclipse-note { margin: 9px 0 0; color: var(--eclipse-muted); font-size: 10px; }
 .eclipse-note[data-tone='error'] { color: var(--eclipse-incorrect); }
-
-.eclipse-actions { display: flex; gap: 8px; margin-top: 20px; }
+.eclipse-actions { display: flex; margin-top: 13px; }
 
 .eclipse-primary {
-  flex: 1 1 auto;
-  min-height: 44px;
-  padding: 10px 16px;
-  background: linear-gradient(135deg, #F7C948 0%, #F5B027 100%);
-  color: #1A1200;
-  border: 1px solid var(--eclipse-gold);
+  flex: 1;
+  min-height: 43px;
+  padding: 9px 14px;
+  border: 1px solid var(--eclipse-gold-high);
   border-radius: 12px;
+  background: linear-gradient(135deg, var(--eclipse-gold-high), var(--eclipse-gold));
+  box-shadow: var(--eclipse-shadow-gold), inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  color: #251B02;
   font: inherit;
-  font-size: 15px;
-  font-weight: 700;
+  font-weight: 800;
   cursor: pointer;
-  transition: filter 120ms ease, transform 80ms ease;
+  transition: transform var(--eclipse-transition), filter var(--eclipse-transition);
 }
 
-.eclipse-primary:hover {
-  filter: brightness(1.08);
-  transform: translateY(-1px);
-}
+.eclipse-primary:hover { filter: brightness(1.04); transform: translateY(-1px); }
+.eclipse-primary:active { transform: translateY(1px); }
 
-.eclipse-primary:active {
-  transform: translateY(0);
-  filter: brightness(0.96);
-}
+.eclipse-visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+:focus-visible { outline: 3px solid var(--eclipse-gold); outline-offset: 2px; }
 
-.eclipse-visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
-}
-
-:focus-visible {
-  outline: 3px solid var(--eclipse-gold);
-  outline-offset: 2px;
+@media (max-width: 560px) {
+  .eclipse-root { padding: 12px; }
+  .eclipse-card { max-height: calc(100vh - 24px); padding: 17px; border-radius: 15px; }
+  .eclipse-reason-grid { grid-template-columns: 1fr; }
+  .eclipse-translation-pair { grid-template-columns: 1fr; gap: 5px; }
+  .eclipse-translation-arrow { transform: rotate(90deg); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .eclipse-card { animation: none; }
+  .eclipse-card,
+  .eclipse-verdict { animation: none; }
   * { transition: none !important; }
+}
+
+@media (forced-colors: active) {
+  .eclipse-card,
+  .eclipse-choice,
+  .eclipse-verdict,
+  .eclipse-primary { border: 2px solid CanvasText; }
+  .eclipse-scrim { backdrop-filter: none; }
 }
 `;
 
-/**
- * One selector for every token rule.
- *
- * The class is repeated rather than varied: specificity is what decides a fight
- * with a host stylesheet, and `.eclipse-token` three times costs nothing while
- * putting the base rule out of reach of essentially anything a page can write.
- * Repeating it also keeps every rule below on the *same* footing — which is the
- * actual bug this shape prevents. When the base rule and a variant rule sat at
- * different specificities and both restated the surface, a host page could beat
- * one and lose to the other, so single-word tokens rendered as bare grey
- * `<button>` chrome while multi-word ones kept the violet surface.
- */
 const TOKEN_SEL = `html body button[data-eclipse-owner='eclipse'].eclipse-token.eclipse-token.eclipse-token`;
 
-/**
- * The token surface is opaque.
- *
- * A translucent wash reads as whatever is behind it: grey on a light page, and
- * gold text on that lands near 2.6:1, well under AA. An opaque violet base with
- * a violet tint layered on top keeps the glass look on a dark article while
- * making the token's appearance independent of the host page entirely — there
- * is nothing behind it left to show through. `backdrop-filter` is gone for the
- * same reason: invisible under an opaque fill, and it created a containing
- * block for no benefit.
- */
 const TOKEN_SURFACE = `
-  background-color: #1A1438 !important;
-  background-image: linear-gradient(180deg, rgba(139, 92, 246, 0.22) 0%, rgba(139, 92, 246, 0.08) 100%) !important;
+  background-color: ${COLORS.token} !important;
+  background-image: linear-gradient(180deg, rgba(139, 92, 246, 0.2), rgba(7, 10, 20, 0.08)) !important;
 `;
 
 const TOKEN_SURFACE_HOVER = `
-  background-color: #241B54 !important;
-  background-image: linear-gradient(180deg, rgba(167, 139, 250, 0.34) 0%, rgba(139, 92, 246, 0.16) 100%) !important;
+  background-color: ${COLORS.tokenHover} !important;
+  background-image: linear-gradient(180deg, rgba(167, 139, 250, 0.3), rgba(139, 92, 246, 0.12)) !important;
 `;
 
-/**
- * Styles for the inline token.
- *
- * Every rule below states only what it changes. Nothing restates the surface,
- * so a token can never be half-themed: the variants add an accent or a state
- * colour on top of one base that all of them share.
- */
 export const TOKEN_CSS = `
 ${TOKEN_SEL} {
   all: unset !important;
   -webkit-appearance: none !important;
   appearance: none !important;
+  position: relative !important;
   display: inline-block !important;
   vertical-align: baseline !important;
-  margin: 0 3px !important;
-  padding: 2px 8px !important;
-  border: 1px solid rgba(139, 92, 246, 0.75) !important;
+  box-sizing: border-box !important;
+  min-height: 0 !important;
+  margin: 0 2px !important;
+  padding: 1px 6px !important;
+  border: 1px solid rgba(139, 92, 246, 0.82) !important;
   border-radius: 6px !important;
 ${TOKEN_SURFACE}
-  color: ${COLORS.gold} !important;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+  color: ${COLORS.goldHigh} !important;
   font: inherit !important;
   font-style: normal !important;
-  font-weight: 700 !important;
-  text-decoration: none !important;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55) !important;
+  font-weight: 750 !important;
   line-height: inherit !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+  text-decoration: none !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65) !important;
   cursor: pointer !important;
-  transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease, color 180ms ease, transform 120ms ease !important;
-  position: relative !important;
-  min-height: 0 !important;
-  box-sizing: border-box !important;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, color 160ms ease, transform 120ms ease !important;
 }
 
 ${TOKEN_SEL}::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  height: 40px;
-  transform: translateY(-50%);
-  min-width: 40px;
+  content: '' !important;
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  top: 50% !important;
+  min-width: 40px !important;
+  height: 40px !important;
+  transform: translateY(-50%) !important;
 }
 
-${TOKEN_SEL}:hover {
+${TOKEN_SEL}:hover,
+${TOKEN_SEL}:focus-visible {
   border-color: ${COLORS.gold} !important;
 ${TOKEN_SURFACE_HOVER}
   color: #FFFFFF !important;
-  box-shadow: 0 0 14px rgba(247, 201, 72, 0.45), 0 2px 10px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
+  animation: eclipse-golden-aura 2.2s linear infinite !important;
   transform: translateY(-1px) !important;
 }
 
-/*
- * A phrase is one semantic unit even when it contains several words. The only
- * thing that marks it is the bottom rule — it adds to the shared surface rather
- * than repainting it.
- */
 ${TOKEN_SEL}[data-eclipse-kind='phrase'] {
-  border-bottom: 2.5px solid ${COLORS.violet} !important;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
 }
 
 ${TOKEN_SEL}:focus-visible {
@@ -451,28 +500,66 @@ ${TOKEN_SEL}[data-answered='correct'] {
   border-color: ${COLORS.correct} !important;
   color: ${COLORS.correct} !important;
   background-color: #0B2D26 !important;
-  background-image: linear-gradient(180deg, rgba(45, 212, 191, 0.18) 0%, rgba(45, 212, 191, 0.06) 100%) !important;
-  box-shadow: 0 0 12px rgba(45, 212, 191, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  background-image: linear-gradient(180deg, rgba(45, 212, 191, 0.18), rgba(45, 212, 191, 0.05)) !important;
+  box-shadow: 0 0 13px rgba(45, 212, 191, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
 }
 
 ${TOKEN_SEL}[data-answered='incorrect'] {
   border-color: ${COLORS.incorrect} !important;
   color: ${COLORS.incorrect} !important;
   background-color: #2D0B16 !important;
-  background-image: linear-gradient(180deg, rgba(251, 113, 133, 0.18) 0%, rgba(251, 113, 133, 0.06) 100%) !important;
-  box-shadow: 0 0 12px rgba(251, 113, 133, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  background-image: linear-gradient(180deg, rgba(251, 113, 133, 0.18), rgba(251, 113, 133, 0.05)) !important;
+  box-shadow: 0 0 13px rgba(251, 113, 133, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
 }
 
-/* The phrase rule sets border-bottom, so answered states have to restate it. */
-${TOKEN_SEL}[data-eclipse-kind='phrase'][data-answered='correct'] {
-  border-bottom-color: ${COLORS.correct} !important;
-}
-
-${TOKEN_SEL}[data-eclipse-kind='phrase'][data-answered='incorrect'] {
-  border-bottom-color: ${COLORS.incorrect} !important;
+@keyframes eclipse-golden-aura {
+  0% {
+    border-color: ${COLORS.gold} !important;
+    box-shadow:
+      0 0 0 1px ${COLORS.gold},
+      0 -5px 12px 1px rgba(249, 215, 110, 0.95),
+      3px -3px 16px 2px rgba(247, 201, 72, 0.7),
+      0 0 6px rgba(247, 201, 72, 0.5) !important;
+  }
+  25% {
+    border-color: ${COLORS.goldHigh} !important;
+    box-shadow:
+      0 0 0 1px ${COLORS.goldHigh},
+      5px 0 12px 1px rgba(249, 215, 110, 0.95),
+      3px 3px 16px 2px rgba(247, 201, 72, 0.7),
+      0 0 6px rgba(247, 201, 72, 0.5) !important;
+  }
+  50% {
+    border-color: ${COLORS.gold} !important;
+    box-shadow:
+      0 0 0 1px ${COLORS.gold},
+      0 5px 12px 1px rgba(249, 215, 110, 0.95),
+      -3px 3px 16px 2px rgba(247, 201, 72, 0.7),
+      0 0 6px rgba(247, 201, 72, 0.5) !important;
+  }
+  75% {
+    border-color: ${COLORS.goldHigh} !important;
+    box-shadow:
+      0 0 0 1px ${COLORS.goldHigh},
+      -5px 0 12px 1px rgba(249, 215, 110, 0.95),
+      -3px -3px 16px 2px rgba(247, 201, 72, 0.7),
+      0 0 6px rgba(247, 201, 72, 0.5) !important;
+  }
+  100% {
+    border-color: ${COLORS.gold} !important;
+    box-shadow:
+      0 0 0 1px ${COLORS.gold},
+      0 -5px 12px 1px rgba(249, 215, 110, 0.95),
+      3px -3px 16px 2px rgba(247, 201, 72, 0.7),
+      0 0 6px rgba(247, 201, 72, 0.5) !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  ${TOKEN_SEL} { transition: none !important; }
+  ${TOKEN_SEL} { animation: none !important; transition: none !important; }
+}
+
+@media (forced-colors: active) {
+  ${TOKEN_SEL} { border: 2px solid ButtonText !important; color: ButtonText !important; background: ButtonFace !important; }
 }
 `;

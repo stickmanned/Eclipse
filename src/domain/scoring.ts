@@ -7,7 +7,7 @@
  * testable.
  */
 
-import type { ConceptMastery, LearnerProfile, MoonPhase } from './profile';
+import type { ConceptMastery, LearnerProfile, LearningPhase } from './profile';
 
 export const CONCEPT_SCORE_MIN = -2;
 export const CONCEPT_SCORE_MAX = 2;
@@ -102,38 +102,24 @@ export function applyAnswer(input: MasteryUpdateInput): MasteryUpdateResult {
   };
 }
 
-/** Thresholds for the moon imagery. */
-export const PHASE_CRESCENT_MIN = -0.5;
-export const PHASE_HALF_MIN = 0.5;
-export const PHASE_FULL_MIN = 1.25;
-export const PHASE_FULL_MIN_ATTEMPTS = 3;
-export const PHASE_FULL_MIN_CORRECT = 2;
+/** Successful typed practices needed for the learner-facing moon phases. */
+export const PHASE_HALF_MIN_TYPED_CORRECT = 1;
+export const PHASE_FULL_MIN_TYPED_CORRECT = 3;
 
 /**
  * Moon phase for a concept.
  *
- * - `new_moon` — below -0.5, or never attempted
- * - `crescent` — -0.5 up to but not including 0.5
- * - `half`     — 0.5 up to but not including 1.25
- * - `full`     — 1.25 or higher, with at least 3 attempts and 2 correct
- *
- * A score high enough for `full` but without the evidence behind it reports
- * `half`. One lucky guess never fills the moon.
+ * Crescent begins with the first contextual attempt. One correct typed
+ * practice makes Half Moon; three correct typed practices make Full Moon.
  */
-export function phaseFor(score: number, attempts: number, correct: number): MoonPhase {
-  if (attempts <= 0) return 'new_moon';
-  if (score < PHASE_CRESCENT_MIN) return 'new_moon';
-  if (score >= PHASE_FULL_MIN) {
-    return attempts >= PHASE_FULL_MIN_ATTEMPTS && correct >= PHASE_FULL_MIN_CORRECT
-      ? 'full'
-      : 'half';
-  }
-  if (score >= PHASE_HALF_MIN) return 'half';
+export function phaseFor(successfulTypedPractices: number): LearningPhase {
+  if (successfulTypedPractices >= PHASE_FULL_MIN_TYPED_CORRECT) return 'full';
+  if (successfulTypedPractices >= PHASE_HALF_MIN_TYPED_CORRECT) return 'half';
   return 'crescent';
 }
 
-export function phaseForMastery(mastery: ConceptMastery): MoonPhase {
-  return phaseFor(mastery.score, mastery.attempts, mastery.correct);
+export function phaseForMastery(mastery: ConceptMastery): LearningPhase {
+  return phaseFor(mastery.unassistedCorrect);
 }
 
 /** Ability used when a concept has never been seen. */

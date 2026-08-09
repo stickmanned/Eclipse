@@ -1,12 +1,9 @@
 /**
  * Background service worker.
  *
- * Owns: popup requests, tab validation, the single active session, runtime
- * injection of the Eclipse content script, the level-matched generation call,
- * and session replacement across tabs.
- *
- * Does NOT own: answer outcomes. Those have exactly one writer, the content
- * script, which is what removes the popup/background/content race entirely.
+ * Owns: popup requests, answer-outcome persistence, tab validation, the single
+ * active session, runtime injection of the Eclipse content script, the level-
+ * matched generation call, and session replacement across tabs.
  */
 
 import { browser, type Browser } from 'wxt/browser';
@@ -21,6 +18,8 @@ import {
   type EclipseMessage,
   type GenerateTrapsData,
   type PongData,
+  type RecordAnswerData,
+  type RecordAnswerMessage,
   type ResetProfileData,
   type SaveCalibrationData,
   type SetProviderData,
@@ -29,10 +28,10 @@ import {
   type StatusData,
 } from '../domain/messages';
 import { classifyUrl } from '../domain/url-support';
-import { summarizeMastery } from '../domain/profile';
+import { summarizeMastery, vocabularyItems } from '../domain/profile';
 import { abilityForDelfLevel, type DelfLevel } from '../domain/delf';
 import { chromeArea } from '../storage/area';
-import { loadProfile, resetProfile, saveProfile } from '../storage/profile-store';
+import { loadProfile, persistAnswer, resetProfile, saveProfile } from '../storage/profile-store';
 import {
   clearActiveSession,
   isGenerationAuthorized,
@@ -61,6 +60,7 @@ const PROVIDER_CONFIGURED = PROVIDER_ORIGIN.length > 0;
 export default defineBackground(() => {
   const local = chromeArea(browser.storage.local);
   const session = chromeArea(browser.storage.session);
+  let answerWriteQueue: Promise<void> = Promise.resolve();
 
   browser.runtime.onMessage.addListener((raw, sender, sendResponse) => {
     const message = parseMessage(raw);
@@ -121,6 +121,8 @@ export default defineBackground(() => {
         return doSetProvider(message.enabled);
       case 'GENERATE_TRAPS':
         return doGenerateTraps(message.sessionId, message.delfLevel, message.sentences, sender);
+      case 'RECORD_ANSWER':
+        return enqueueAnswer(message);
       // PING / ACTIVATE / DEACTIVATE are addressed to the content script and
       // arrive there by `tabs.sendMessage`, so the worker only ever sees one if
       // a peer is out of step. Say so rather than going quiet.
@@ -278,9 +280,10 @@ export default defineBackground(() => {
           attempts: 0,
           correct: 0,
           due: 0,
-          byPhase: { new_moon: 0, crescent: 0, half: 0, full: 0 },
+          byPhase: { crescent: 0, half: 0, full: 0 },
           overallPhase: 'new_moon',
         },
+        vocabulary: [],
         provider: {
           configured: PROVIDER_CONFIGURED,
           enabled: PROVIDER_CONFIGURED,
@@ -305,6 +308,7 @@ export default defineBackground(() => {
       globalAbility: profile.globalAbility,
       phase: summary.overallPhase,
       summary,
+      vocabulary: vocabularyItems(profile, now),
       provider: {
         configured: PROVIDER_CONFIGURED,
         enabled: PROVIDER_CONFIGURED,
@@ -356,6 +360,42 @@ export default defineBackground(() => {
     });
     if (!saved.ok) return saved;
     return success({ globalAbility, delfLevel });
+  }
+
+  // -------------------------------------------------------------------------
+  // Single-writer answer persistence
+  // -------------------------------------------------------------------------
+
+  function enqueueAnswer(message: RecordAnswerMessage): Promise<Result<RecordAnswerData>> {
+    const pending = answerWriteQueue.then(() => doRecordAnswer(message));
+    answerWriteQueue = pending.then(
+      () => undefined,
+      () => undefined,
+    );
+    return pending;
+  }
+
+  async function doRecordAnswer(message: RecordAnswerMessage): Promise<Result<RecordAnswerData>> {
+    const updated = await persistAnswer(local, {
+      interactionId: message.interactionId,
+      conceptId: message.conceptId,
+      difficulty: message.difficulty,
+      correct: message.correct,
+      assisted: message.assisted,
+      mode: message.mode,
+      contextFingerprint: message.contextFingerprint,
+      now: new Date(),
+      display: message.display,
+    });
+    if (!updated.ok) return updated;
+
+    return success({
+      interactionId: message.interactionId,
+      applied: updated.data.applied,
+      previousPhase: updated.data.previousPhase,
+      phase: updated.data.phase,
+      mastery: updated.data.mastery,
+    });
   }
 
   // -------------------------------------------------------------------------
