@@ -6,24 +6,26 @@
  * Background → content: PING, ACTIVATE, DEACTIVATE
  * Content → background: GENERATE_TRAPS
  *
- * `SAVE_CALIBRATION` and `SET_PROVIDER` are the two additions to the eight
- * message types in the plan, and both exist to keep the ownership boundary
- * intact rather than to add features:
- *
- * - Calibration produces a `globalAbility`, which is learner history. The plan
- *   says the popup must not write that directly, so it routes through here.
- * - Enabling the optional provider needs `chrome.permissions.request`, which
- *   requires a user gesture and therefore must be called from the popup — but
- *   the resulting setting is the worker's to persist.
+ * `SAVE_CALIBRATION` keeps the profile ownership boundary intact: the popup
+ * reports the learner's diagnostic or self-selected DELF level and the worker
+ * persists it. `SET_PROVIDER` remains only for compatibility with older popup
+ * bundles; the worker always answers with enabled=true.
  *
  * Every handler returns `Success<T>` or `Failure`; nothing throws across a
  * message boundary.
  */
 
 import { z } from 'zod';
-import { ERROR_CODES, type Failure, type Result, type Success } from './errors';
+import {
+  ERROR_CODES,
+  STALE_WORKER_MESSAGE,
+  type Failure,
+  type Result,
+  type Success,
+} from './errors';
 import { MOON_PHASES, type MasterySummary, type MoonPhase } from './profile';
 import type { GeneratedTrapCandidate } from './trap';
+import { DELF_LEVELS, type DelfLevel } from './delf';
 
 export const MESSAGE_TYPES = [
   'START_SESSION',
@@ -39,6 +41,18 @@ export const MESSAGE_TYPES = [
 ] as const;
 
 export type MessageType = (typeof MESSAGE_TYPES)[number];
+
+/**
+ * Bumped whenever a payload above changes shape in a way an older peer cannot
+ * parse. Both halves of the extension compile this constant in, and the popup
+ * compares the value `GET_STATUS` reports against its own — which is how a
+ * popup talking to a stale service worker says "reload Eclipse" instead of
+ * failing on the first message whose shape moved.
+ *
+ * v2: SAVE_CALIBRATION carries `delfLevel`/`method` rather than
+ *     `globalAbility`/`skipped`, and GENERATE_TRAPS carries `delfLevel`.
+ */
+export const MESSAGE_CONTRACT_VERSION = 2;
 
 // ---------------------------------------------------------------------------
 // Payloads
@@ -77,6 +91,7 @@ export interface GetStatusMessage {
 export interface GenerateTrapsMessage {
   type: 'GENERATE_TRAPS';
   sessionId: string;
+  delfLevel: DelfLevel;
   sentences: { id: string; text: string }[];
 }
 
@@ -93,9 +108,9 @@ export interface SetProviderMessage {
 
 export interface SaveCalibrationMessage {
   type: 'SAVE_CALIBRATION';
-  globalAbility: number;
+  delfLevel: DelfLevel;
   correctAnswers: number;
-  skipped: boolean;
+  method: 'diagnostic' | 'self_selected';
 }
 
 export type EclipseMessage =
@@ -145,12 +160,15 @@ export type PopupPageSupport =
   { supported: true } | { supported: false; reason: 'internal' | 'file' | 'extension' | 'other' };
 
 export interface StatusData {
+  /** The worker's `MESSAGE_CONTRACT_VERSION`. Absent from pre-v2 workers. */
+  contractVersion: number;
   activeTabId: number | null;
   activeSessionId: string | null;
   /** True when the tab the popup is showing is the one with a live session. */
   activeHere: boolean;
   page: PopupPageSupport;
   calibrationCompleted: boolean;
+  delfLevel: DelfLevel;
   globalAbility: number;
   phase: MoonPhase;
   summary: MasterySummary;
@@ -174,6 +192,7 @@ export interface ResetProfileData {
 
 export interface SaveCalibrationData {
   globalAbility: number;
+  delfLevel: DelfLevel;
 }
 
 export interface SetProviderData {
@@ -210,7 +229,7 @@ export const eclipseMessageSchema: z.ZodType<EclipseMessage> = z.discriminatedUn
   z.object({
     type: z.literal('ACTIVATE'),
     sessionId: z.string().min(1),
-    providerEnabled: z.boolean(),
+    providerEnabled: z.boolean().optional().default(true),
   }),
   z.object({
     type: z.literal('DEACTIVATE'),
@@ -221,18 +240,19 @@ export const eclipseMessageSchema: z.ZodType<EclipseMessage> = z.discriminatedUn
   z.object({
     type: z.literal('GENERATE_TRAPS'),
     sessionId: z.string().min(1),
+    delfLevel: z.enum(DELF_LEVELS),
     sentences: z
       .array(z.object({ id: z.string().min(1).max(64), text: z.string().min(1).max(300) }))
       .max(8),
   }),
-  z.object({ type: z.literal('RESET_PROFILE'), confirmed: z.boolean() }),
+  z.object({ type: z.literal('RESET_PROFILE'), confirmed: z.boolean().optional().default(true) }),
   z.object({
     type: z.literal('SAVE_CALIBRATION'),
-    globalAbility: z.number().min(-1).max(1),
-    correctAnswers: z.number().int().min(0).max(3),
-    skipped: z.boolean(),
+    delfLevel: z.enum(DELF_LEVELS),
+    correctAnswers: z.number().int().min(0).max(8).optional().default(0),
+    method: z.enum(['diagnostic', 'self_selected']).optional().default('self_selected'),
   }),
-  z.object({ type: z.literal('SET_PROVIDER'), enabled: z.boolean() }),
+  z.object({ type: z.literal('SET_PROVIDER'), enabled: z.boolean().optional().default(true) }),
 ]);
 
 const failureSchema = z.object({
@@ -248,6 +268,34 @@ const failureSchema = z.object({
 export function parseMessage(value: unknown): EclipseMessage | null {
   const parsed = eclipseMessageSchema.safeParse(value);
   return parsed.success ? parsed.data : null;
+}
+
+/**
+ * Say why a message was rejected, in terms a human reading the popup can act
+ * on. A rejected message is nearly always version skew rather than a malicious
+ * sender, so the copy leads with the fix and carries the field-level detail
+ * behind it for whoever is looking at a console.
+ */
+export function describeRejectedMessage(value: unknown): string {
+  const type = (value as { type?: unknown } | null | undefined)?.type;
+  if (typeof type !== 'string' || !(MESSAGE_TYPES as readonly string[]).includes(type)) {
+    return `${STALE_WORKER_MESSAGE} (unrecognised request${
+      typeof type === 'string' ? ` "${type}"` : ''
+    })`;
+  }
+
+  const parsed = eclipseMessageSchema.safeParse(value);
+  const fields = parsed.success
+    ? []
+    : [
+        ...new Set(
+          parsed.error.issues.map((issue) => issue.path.join('.')).filter((path) => path !== ''),
+        ),
+      ];
+
+  return fields.length > 0
+    ? `${STALE_WORKER_MESSAGE} (${type} sent an unusable ${fields.join(', ')})`
+    : `${STALE_WORKER_MESSAGE} (${type} had an unusable payload)`;
 }
 
 /** Narrow an unknown response value into a `Result`. */

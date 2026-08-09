@@ -74,7 +74,7 @@ describe('article detection order', () => {
 
 describe('article eligibility thresholds', () => {
   it(`needs at least ${MIN_ELIGIBLE_BLOCKS} blocks`, () => {
-    renderBody(`<article><p>${longProse()}</p><p>${longProse()}</p></article>`);
+    renderBody(`<article><h1>${longProse()}</h1></article>`);
     const root = document.querySelector('article')!;
     expect(isArticleEligible(collectEligibleBlocks(root))).toBe(false);
   });
@@ -157,7 +157,9 @@ describe('scanning limits', () => {
       { length: 550 },
       (_, i) => `<a href="/wiki/${i}">linked term ${i}</a><sup>[${i}]</sup> `,
     ).join('');
-    renderBody(`<main><p>${inlineNoise}</p><p id="late-1">${longProse()}</p><p id="late-2">${longProse()}</p><p id="late-3">${longProse()}</p></main>`);
+    renderBody(
+      `<main><p>${inlineNoise}</p><p id="late-1">${longProse()}</p><p id="late-2">${longProse()}</p><p id="late-3">${longProse()}</p></main>`,
+    );
     const root = document.querySelector('main')!;
     const blocks = collectEligibleBlocks(root);
 

@@ -62,7 +62,8 @@ describe('Demo A activation', () => {
       expect(token.getAttribute('data-eclipse-trap')).toBeTruthy();
       expect(token.getAttribute('data-eclipse-concept')).toMatch(/^fr:/);
       expect(token.getAttribute('lang')).toBe('fr-FR');
-      expect(token.getAttribute('aria-label')).toMatch(/French context challenge/);
+      expect(token.getAttribute('aria-label')).toMatch(/French (word|phrase)/);
+      expect(token.getAttribute('aria-label')).toContain('translation question');
       expect(token.textContent?.length).toBeGreaterThan(0);
       // Text only, never markup.
       expect(token.children).toHaveLength(0);

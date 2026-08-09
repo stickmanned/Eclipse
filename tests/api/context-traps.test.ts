@@ -1,5 +1,5 @@
 /**
- * The optional generation API.
+ * The loopback generation API.
  *
  * Every case runs against the fake provider — no API key is required to build,
  * test, demo or use Eclipse.
@@ -27,6 +27,7 @@ function app(
 const VALID_BODY = {
   sourceLocale: 'en',
   targetLocale: 'fr-FR',
+  delfLevel: 'B1',
   sentences: [
     { id: 's1', text: 'The museum is currently closed and will reopen next Monday.' },
     { id: 's2', text: 'Readers can borrow from the library for three weeks at a time.' },
@@ -414,6 +415,7 @@ describe('prompt injection in page text', () => {
   const injected = {
     sourceLocale: 'en',
     targetLocale: 'fr-FR',
+    delfLevel: 'B1',
     sentences: [
       {
         id: 's1',

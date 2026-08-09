@@ -10,6 +10,7 @@ import type { ContextTrapsRequest } from '../../server/schema';
 const REQUEST: ContextTrapsRequest = {
   sourceLocale: 'en',
   targetLocale: 'fr-FR',
+  delfLevel: 'B1',
   sentences: [
     {
       id: 'sentence-1',
@@ -113,6 +114,7 @@ describe('Gemini provider boundary', () => {
       apiKey: 'test-key',
       model: 'gemini-3.5-flash-lite',
       client,
+      retryDelayMs: 0,
     });
 
     const outcome = await provider.generate(REQUEST, new AbortController().signal);
@@ -147,6 +149,21 @@ describe('Gemini provider boundary', () => {
     });
   });
 
+  it('repairs a transient non-JSON structured response before returning 502', async () => {
+    const { client, requests } = clientReturningSequence([
+      'temporarily malformed',
+      JSON.stringify(VALID_OUTPUT),
+    ]);
+    const provider = geminiProvider({ apiKey: 'test-key', client });
+
+    await expect(provider.generate(REQUEST, new AbortController().signal)).resolves.toEqual({
+      kind: 'ok',
+      output: VALID_OUTPUT,
+    });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]?.request.system_instruction).toContain('REPAIR ATTEMPT');
+  });
+
   it('makes one bounded repair attempt when usable prose produces no traps', async () => {
     const { client, requests } = clientReturningSequence([
       JSON.stringify({ traps: [] }),
@@ -156,6 +173,7 @@ describe('Gemini provider boundary', () => {
       apiKey: 'test-key',
       model: 'gemini-3.5-flash-lite',
       client,
+      retryDelayMs: 0,
     });
 
     await expect(
@@ -180,6 +198,7 @@ describe('Gemini provider boundary', () => {
       apiKey: 'test-key',
       model: 'gemini-3.5-flash-lite',
       client,
+      retryDelayMs: 0,
     });
 
     await expect(provider.generate(REQUEST, new AbortController().signal)).resolves.toEqual({
@@ -187,6 +206,25 @@ describe('Gemini provider boundary', () => {
       output: VALID_OUTPUT,
     });
     expect(requests).toHaveLength(2);
+  });
+
+  it('does not retry a non-transient 403', async () => {
+    let requests = 0;
+    const client: GeminiClient = {
+      interactions: {
+        async create() {
+          requests += 1;
+          throw Object.assign(new Error('forbidden'), { status: 403 });
+        },
+      },
+    };
+    const provider = geminiProvider({ apiKey: 'test-key', client });
+
+    await expect(provider.generate(REQUEST, new AbortController().signal)).resolves.toEqual({
+      kind: 'unavailable',
+      detail: 'gemini_status_403',
+    });
+    expect(requests).toBe(1);
   });
 
   it('reports an aborted request as a timeout', async () => {

@@ -2,7 +2,7 @@
  * Content safety for every string that can reach the DOM.
  *
  * Two sources feed traps: the bundled catalog (trusted, but still validated so
- * a bad edit fails loudly in CI) and the optional generation API (untrusted,
+ * a bad edit fails loudly in CI) and the always-on generation API (untrusted,
  * because its input is page text an attacker controls).
  *
  * Eclipse renders text through React text nodes and `textContent` only, so

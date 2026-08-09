@@ -88,6 +88,20 @@ describe('round trip', () => {
     });
     expect(await getCachedTraps(area, sentence('weak'), NOW)).toBeNull();
   });
+
+  it('preserves entries written concurrently by provider batches', async () => {
+    const area = memoryArea();
+    const first = sentence('first batch');
+    const second = sentence('second batch');
+
+    await Promise.all([
+      setCachedTraps(area, first, [generatedTrap({ sentence: first })], NOW),
+      setCachedTraps(area, second, [generatedTrap({ sentence: second })], NOW),
+    ]);
+
+    expect(await getCachedTraps(area, first, LATER)).not.toBeNull();
+    expect(await getCachedTraps(area, second, LATER)).not.toBeNull();
+  });
 });
 
 describe('eviction', () => {

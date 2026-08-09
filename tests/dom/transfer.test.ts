@@ -48,11 +48,11 @@ describe('Demo A', () => {
 });
 
 describe('a fresh learner on Demo B', () => {
-  it('does not see attendre — four other concepts outrank it', async () => {
+  it('receives the broader catalog coverage allowed by the paragraph-scaled cap', async () => {
     const storage = memoryArea();
     await activate(storage, 'demo-b.html', 'ses_b');
-    expect(conceptsOnPage()).not.toContain(ATTENDRE);
-    expect(conceptsOnPage()).toHaveLength(4);
+    expect(conceptsOnPage()).toContain(ATTENDRE);
+    expect(conceptsOnPage().length).toBeGreaterThan(4);
   });
 });
 

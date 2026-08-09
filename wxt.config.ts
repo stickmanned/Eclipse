@@ -7,8 +7,9 @@ import { defineConfig } from 'wxt';
  * - `scripting`  — inject the Eclipse runtime on demand (never declaratively).
  * - `storage`    — learner profile in `storage.local`, session state in `storage.session`.
  *
- * `optional_host_permissions` holds the local generation API only. It is requested
- * at the moment the user enables AI-generated traps and never before.
+ * `host_permissions` contains one loopback-only origin for Eclipse's always-on
+ * AI vocabulary generation. No article origin is granted: page access still
+ * comes only from `activeTab` after the learner starts Eclipse.
  *
  * The Eclipse content script is declared with `registration: "runtime"` and no
  * `matches`, so WXT emits it as a bundle file without adding any host permission
@@ -39,14 +40,19 @@ export default defineConfig({
   srcDir: 'src',
   modules: ['@wxt-dev/module-react'],
   outDir: isE2E ? '.output-e2e' : '.output',
+  vite: () => ({
+    build: {
+      modulePreload: {
+        polyfill: false,
+      },
+    },
+  }),
   manifest: {
-    name: isE2E ? 'Eclipse — Context Traps (E2E)' : 'Eclipse — Context Traps',
+    name: isE2E ? 'Eclipse — French Reading (E2E)' : 'Eclipse — French Reading',
     description:
-      'Turn any English article into a French context exercise. Hide the familiar meaning, infer the truth from context, reveal the evidence.',
+      'Turn English articles into DELF-matched French vocabulary and phrase exercises, powered by AI.',
     permissions: ['activeTab', 'scripting', 'storage'],
-    ...(isE2E
-      ? { host_permissions: [E2E_DEMO_ORIGIN, PROVIDER_ORIGIN] }
-      : { optional_host_permissions: [PROVIDER_ORIGIN] }),
+    host_permissions: isE2E ? [E2E_DEMO_ORIGIN, PROVIDER_ORIGIN] : [PROVIDER_ORIGIN],
     minimum_chrome_version: '120',
   },
   hooks: {

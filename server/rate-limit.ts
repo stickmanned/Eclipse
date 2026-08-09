@@ -12,7 +12,7 @@ export interface RateLimiter {
   reset(): void;
 }
 
-export const RATE_LIMIT_PER_MINUTE = 30;
+export const RATE_LIMIT_PER_MINUTE = 60;
 export const RATE_WINDOW_MS = 60_000;
 
 export function createRateLimiter(

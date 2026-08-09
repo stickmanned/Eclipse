@@ -18,7 +18,8 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import type { OverlayStore, ResultView } from '../overlay-store';
 import type { ContextTrap } from '../../domain/trap';
-import { primaryDistractor } from '../../domain/trap';
+import { learningItemKind, primaryDistractor } from '../../domain/trap';
+import { delfLevelForDifficulty } from '../../domain/delf';
 import { Moon, PHASE_DESCRIPTION, PHASE_LABEL } from './Moon';
 
 const CHOICE_KEYS = ['1', '2', '3'] as const;
@@ -139,17 +140,23 @@ interface QuestionProps {
 }
 
 function QuestionView({ trap, onAnswer, onClose }: QuestionProps) {
+  const kind = learningItemKind(trap);
+  const delfLevel = delfLevelForDifficulty(trap.difficulty);
   return (
     <>
       <header className="eclipse-header">
-        <p className="eclipse-eyebrow">English → French</p>
+        <p className="eclipse-eyebrow">
+          French {kind} <span aria-hidden="true">·</span> DELF {delfLevel}
+        </p>
         <CloseButton onClose={onClose} />
       </header>
 
       <p className="eclipse-surface" lang="fr-FR" id="eclipse-title">
         {trap.targetSurface}
       </p>
-      <p className="eclipse-question">What does it mean here?</p>
+      <p className="eclipse-question">
+        What does this {kind === 'phrase' ? 'whole phrase' : 'word'} mean here?
+      </p>
 
       <Sentence trap={trap} />
 
@@ -227,11 +234,15 @@ interface TruthCardProps {
 function TruthCard({ result, onClose }: TruthCardProps) {
   const { trap, correct, selected } = result;
   const distractor = primaryDistractor(trap);
+  const kind = learningItemKind(trap);
 
   return (
     <>
       <header className="eclipse-header">
-        <p className="eclipse-eyebrow">Truth card</p>
+        <p className="eclipse-eyebrow">
+          {kind === 'phrase' ? 'Phrase translation' : 'Translation'}{' '}
+          <span aria-hidden="true">·</span> DELF {delfLevelForDifficulty(trap.difficulty)}
+        </p>
       </header>
 
       <p className="eclipse-verdict" data-correct={String(correct)} id="eclipse-title">
@@ -253,7 +264,7 @@ function TruthCard({ result, onClose }: TruthCardProps) {
       </p>
 
       <div className="eclipse-section">
-        <p className="eclipse-section-label">Means here</p>
+        <p className="eclipse-section-label">English translation</p>
         <p className="eclipse-section-body">{trap.acceptedChoice}</p>
       </div>
 

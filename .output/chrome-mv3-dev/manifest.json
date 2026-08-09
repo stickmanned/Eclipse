@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Eclipse — Context Traps",
-  "description": "Turn any English article into a French context exercise. Hide the familiar meaning, infer the truth from context, reveal the evidence.",
+  "name": "Eclipse — French Reading",
+  "description": "Turn English articles into DELF-matched French vocabulary and phrase exercises, powered by AI.",
   "version": "0.1.0",
   "icons": {
     "16": "icon/16.png",
@@ -16,8 +16,9 @@
     "storage",
     "tabs"
   ],
-  "optional_host_permissions": [
-    "http://localhost:8787/*"
+  "host_permissions": [
+    "http://localhost:8787/*",
+    "http://localhost/*"
   ],
   "minimum_chrome_version": "120",
   "commands": {
@@ -35,9 +36,6 @@
     "default_title": "Eclipse — Context Traps",
     "default_popup": "popup.html"
   },
-  "host_permissions": [
-    "http://localhost/*"
-  ],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval' http://localhost:3001; object-src 'self';",
     "sandbox": "script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:3001; sandbox allow-scripts allow-forms allow-popups allow-modals; child-src 'self';"

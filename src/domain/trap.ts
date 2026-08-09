@@ -1,11 +1,10 @@
 /**
- * The context-trap contract.
+ * The article learning-item contract.
  *
- * A trap is one replacement: a specific English span inside a specific sentence
- * becomes a French surface form, and answering it reveals the evidence that
- * settles the meaning. Traps arrive from the bundled catalog or, optionally,
- * from the local generation API. Both go through {@link validateTrap} before
- * anything is rendered.
+ * One useful English word or phrase inside a specific sentence becomes a
+ * French surface form. Selecting it opens a comprehension question and then
+ * reveals the translation and contextual evidence. The historic `trap` name
+ * remains internal so stored mastery ids and the safety boundary stay stable.
  */
 
 import { z } from 'zod';
@@ -20,8 +19,10 @@ import {
 import { checkFieldSafety, type SafetyIssue } from './safety';
 import { failure, success, type Result } from './errors';
 
-export const TRAP_TYPES = ['polysemy', 'idiom', 'false_friend'] as const;
+export const TRAP_TYPES = ['vocabulary', 'phrase', 'polysemy', 'idiom', 'false_friend'] as const;
 export type TrapType = (typeof TRAP_TYPES)[number];
+
+export type LearningItemKind = 'word' | 'phrase';
 
 export const TRAP_PROVIDERS = ['catalog', 'gemini'] as const;
 export type TrapProvider = (typeof TRAP_PROVIDERS)[number];
@@ -85,6 +86,58 @@ export const contextTrapSchema = z.object({
   confidence: z.number().min(0).max(1),
   provider: z.enum(TRAP_PROVIDERS),
 });
+
+/**
+ * French-only orthography. Used to test *choices*, never a target surface.
+ */
+const FRENCH_ONLY_ORTHOGRAPHY = /[àâäçéèêëîïôöùûüÿœæ]/iu;
+
+/** Comparison form with diacritics removed. Only ever used to compare, never to store. */
+function deaccentFold(value: string): string {
+  return foldForComparison(value).normalize('NFD').replace(/\p{M}/gu, '');
+}
+
+/**
+ * The choices are English glosses, and these are the rules that keep them so.
+ *
+ * A model asked for "three English interpretations" sometimes answers with three
+ * French words instead — inflections of the highlighted surface, or its French
+ * near-synonyms. Such an item passes every structural rule and renders fine, but
+ * it asks the learner to pick a French word out of three French words, which
+ * teaches nothing. Two deterministic rules catch the shapes this has taken:
+ *
+ * 1. No choice may be the highlighted surface itself. Even for a true cognate —
+ *    `programme` offered as the meaning of `programme` — the item is vacuous, so
+ *    rejecting it is right whichever language the model thought it was writing.
+ * 2. No choice may carry French-only orthography. English glosses needing an
+ *    accent are rare, and each one has an accepted unaccented spelling ("cafe",
+ *    "naive", "facade"), so the rule costs almost nothing and blocks a whole
+ *    class of French leakage.
+ *
+ * Neither rule is language detection — there is no dictionary here. They are
+ * cheap structural checks against the ways this has actually failed. A choice
+ * set that slips past them is still possible; the prompt is the first line, and
+ * this is the one that holds when the prompt does not.
+ *
+ * Returns one issue string per offending choice, empty when the set is clean.
+ */
+export function findChoiceLanguageIssues(
+  choices: readonly string[],
+  targetSurface: string,
+): string[] {
+  const issues: string[] = [];
+  const surface = deaccentFold(targetSurface);
+
+  for (const [index, choice] of choices.entries()) {
+    if (deaccentFold(choice) === surface) {
+      issues.push(`choices.${index} repeats targetSurface instead of giving its English meaning`);
+    } else if (FRENCH_ONLY_ORTHOGRAPHY.test(choice)) {
+      issues.push(`choices.${index} is French, not an English meaning`);
+    }
+  }
+
+  return issues;
+}
 
 export interface TrapValidationOptions {
   /**
@@ -179,6 +232,9 @@ export function validateTrap(
     issues.push('acceptedChoice must exactly match one of choices');
   }
 
+  // --- and every one of them is an English gloss, not a French word ---------
+  issues.push(...findChoiceLanguageIssues(value.choices, value.targetSurface));
+
   // --- generated traps carry a confidence floor ---------------------------
   if (untrusted && value.confidence < MIN_GENERATED_CONFIDENCE) {
     issues.push(
@@ -230,4 +286,10 @@ export function primaryDistractor(trap: ContextTrap): string {
 /** True when the learner's selection is the accepted meaning. */
 export function isCorrectChoice(trap: ContextTrap, selected: string): boolean {
   return selected === trap.acceptedChoice;
+}
+
+export function learningItemKind(trap: ContextTrap): LearningItemKind {
+  return trap.type === 'phrase' || trap.type === 'idiom' || /\s/u.test(trap.exactSourceText.trim())
+    ? 'phrase'
+    : 'word';
 }
