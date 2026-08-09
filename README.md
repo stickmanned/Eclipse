@@ -2,7 +2,7 @@
 
 <img src="/src/README_src/Eclipse_Text.png">
 
-Eclipse is an online assistant, supplementing clients with a new method on how to learn French over enhancing their reading comprehensions. Eclipse is added into your browser as a chrome extension, and there are 2 separate modes in which the extension can be used. The modes are Translation mode, and Paraphrase mode. 
+Eclipse is a browser extension that edits pages to make you learn French while you surf. There are 2 separate modes in which the extension can be used. The modes are Translation mode, and Paraphrase mode. 
 
 Translation mode is recommended for learners who are new to French (roughly delf A2 TO B1 comprehensions, which users will adjust in settings). In this setting, words from all over an article the viewer is reading, will be translated into French. If these translated words are clicked on by the viewer, they will be given a multi choice guess on their direct translation and meaning. When successful with the multichoice questions, the AI will grow more ambitious and translate more words from the article into French. If questions are answered incorrectly, the AI will become less ambitious and translate less words in compatibility towards the viewer’s minimal and beginner French comprehension. Eclipse will also track the user’s progress and understanding of French words by recording how many questions on the definitions of words in the article, are answered correctly. 
 
