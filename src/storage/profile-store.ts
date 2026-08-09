@@ -25,6 +25,7 @@ import { failure, success, type Result } from '../domain/errors';
 import { guarded, type StorageArea } from './area';
 import { INTERACTIONS_KEY, PROFILE_KEY } from './keys';
 import { MAX_REVIEW_INTERVAL_DAYS, MS_PER_DAY, migratedFsrsCard } from '../domain/scheduling';
+import { backfillActivity, backfillStreak } from '../domain/stats';
 import { DELF_LEVELS } from '../domain/delf';
 import { CONCEPT_ID_PATTERN } from '../domain/trap';
 import { z } from 'zod';
@@ -77,7 +78,16 @@ const learnerProfileSchemaV1 = z.object({
   ),
 });
 
-function migrateProfileV1(raw: z.infer<typeof learnerProfileSchemaV1>): LearnerProfile {
+const learnerProfileSchemaV2 = learnerProfileSchema
+  .omit({ schemaVersion: true, activity: true, streak: true })
+  .extend({ schemaVersion: z.literal(2) });
+type LearnerProfileV2 = z.infer<typeof learnerProfileSchemaV2>;
+const learnerProfileSchemaV3 = learnerProfileSchema
+  .omit({ schemaVersion: true, streak: true })
+  .extend({ schemaVersion: z.literal(3) });
+type LearnerProfileV3 = z.infer<typeof learnerProfileSchemaV3>;
+
+function migrateProfileV1(raw: z.infer<typeof learnerProfileSchemaV1>): LearnerProfileV2 {
   const mastery = Object.fromEntries(
     Object.entries(raw.mastery).map(([conceptId, legacy]) => {
       let intervalDays = 0;
@@ -128,7 +138,7 @@ function migrateProfileV1(raw: z.infer<typeof learnerProfileSchemaV1>): LearnerP
   );
 
   return {
-    schemaVersion: PROFILE_SCHEMA_VERSION,
+    schemaVersion: 2,
     sourceLocale: 'en',
     targetLocale: 'fr-FR',
     calibrationCompleted: raw.calibrationCompleted,
@@ -140,6 +150,25 @@ function migrateProfileV1(raw: z.infer<typeof learnerProfileSchemaV1>): LearnerP
       conceptId: outcome.conceptId as `fr:${string}`,
     })),
   };
+}
+
+function migrateProfileV2(raw: LearnerProfileV2, now: Date): LearnerProfileV3 {
+  return {
+    ...raw,
+    schemaVersion: 3,
+    activity: backfillActivity(
+      Object.values(raw.mastery).flatMap((record) => record.reviewEvents),
+      now,
+    ),
+  } as LearnerProfileV3;
+}
+
+function migrateProfileV3(raw: LearnerProfileV3): LearnerProfile {
+  return {
+    ...raw,
+    schemaVersion: PROFILE_SCHEMA_VERSION,
+    streak: backfillStreak(raw.activity.days),
+  } as LearnerProfile;
 }
 
 /** Seed v2 profiles produced by the older legacy-label migration. */
@@ -169,13 +198,16 @@ function seedLegacyPracticeCounts(profile: LearnerProfile): LearnerProfile | nul
  * Missing data yields a fresh profile. Corrupt or newer-than-supported data
  * yields `PROFILE_INCOMPATIBLE` and is left untouched on disk.
  */
-export async function loadProfile(area: StorageArea): Promise<Result<LoadProfileResult>> {
+export async function loadProfile(
+  area: StorageArea,
+  now = new Date(),
+): Promise<Result<LoadProfileResult>> {
   const read = await guarded(() => area.get(PROFILE_KEY));
   if (!read.ok) return read;
 
   const raw = read.data;
   if (raw === undefined || raw === null) {
-    return success({ profile: createEmptyProfile(), created: true, migrated: false });
+    return success({ profile: createEmptyProfile(now), created: true, migrated: false });
   }
 
   const version = (raw as { schemaVersion?: unknown }).schemaVersion;
@@ -194,7 +226,35 @@ export async function loadProfile(area: StorageArea): Promise<Result<LoadProfile
         'Saved learning data did not match the expected shape and was left untouched.',
       );
     }
-    const profile = migrateProfileV1(legacy.data);
+    const profile = migrateProfileV3(migrateProfileV2(migrateProfileV1(legacy.data), now));
+    const written = await guarded(() => area.set(PROFILE_KEY, profile));
+    if (!written.ok) return written;
+    return success({ profile, created: false, migrated: true });
+  }
+
+  if (version === 2) {
+    const legacy = learnerProfileSchemaV2.safeParse(raw);
+    if (!legacy.success) {
+      return failure(
+        'PROFILE_INCOMPATIBLE',
+        'Saved learning data did not match the expected shape and was left untouched.',
+      );
+    }
+    const profile = migrateProfileV3(migrateProfileV2(legacy.data, now));
+    const written = await guarded(() => area.set(PROFILE_KEY, profile));
+    if (!written.ok) return written;
+    return success({ profile, created: false, migrated: true });
+  }
+
+  if (version === 3) {
+    const legacy = learnerProfileSchemaV3.safeParse(raw);
+    if (!legacy.success) {
+      return failure(
+        'PROFILE_INCOMPATIBLE',
+        'Saved learning data did not match the expected shape and was left untouched.',
+      );
+    }
+    const profile = migrateProfileV3(legacy.data);
     const written = await guarded(() => area.set(PROFILE_KEY, profile));
     if (!written.ok) return written;
     return success({ profile, created: false, migrated: true });

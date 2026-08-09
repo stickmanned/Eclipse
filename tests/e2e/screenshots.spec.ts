@@ -8,7 +8,7 @@
 
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEMO_A, card, expect, startEclipse, test, tokens } from './fixtures';
+import { DEMO_A, card, expect, send, startEclipse, test, tokens } from './fixtures';
 
 const OUT = join(process.cwd(), 'test-results', 'screens');
 
@@ -20,7 +20,7 @@ test.describe('screens', () => {
 
     // 1. DELF setup.
     const popup = await context.newPage();
-    await popup.setViewportSize({ width: 340, height: 600 });
+    await popup.setViewportSize({ width: 420, height: 600 });
     await popup.goto(`chrome-extension://${extensionId}/popup.html`);
     await expect(popup.getByRole('heading', { name: 'Set your DELF level' })).toBeVisible();
     await popup.screenshot({ path: join(OUT, '1-level-setup.png') });
@@ -44,9 +44,41 @@ test.describe('screens', () => {
     await expect(card(page).locator('.eclipse-verdict')).toContainText('Not this time');
     await page.screenshot({ path: join(OUT, '4-truth-card.png') });
 
+    // Seed one correct highlighted-word answer so the daily streak is visible.
+    const streakAnswer = await send(driver, {
+      type: 'RECORD_ANSWER',
+      interactionId: 'screenshot_streak_1',
+      conceptId: 'fr:attendre:wait',
+      difficulty: 0.35,
+      correct: true,
+      assisted: true,
+      mode: 'context-choice',
+      display: {
+        targetSurface: 'attendre',
+        englishMeaning: 'wait',
+        kind: 'word',
+      },
+    });
+    expect(streakAnswer.ok).toBe(true);
+
     // 5. The popup in its ready state, with progress.
     await popup.reload();
     await expect(popup.getByRole('button', { name: /Start Eclipse|End Eclipse/ })).toBeVisible();
+    await popup.waitForTimeout(1_100); // Settle the panel and catch the first shooting-star pass.
     await popup.screenshot({ path: join(OUT, '5-popup.png') });
+
+    // 6. The momentum dashboard, backed by the answer recorded above.
+    await popup.getByRole('tab', { name: 'Stats' }).click();
+    await expect(popup.getByRole('heading', { name: 'Learning momentum' })).toBeVisible();
+    expect(
+      await popup.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+    await popup.screenshot({ path: join(OUT, '6-stats.png'), fullPage: true });
+
+    // 7. The lower dashboard interpretation layer.
+    await popup.getByRole('heading', { name: 'What the data says' }).scrollIntoViewIfNeeded();
+    await popup.screenshot({ path: join(OUT, '7-stats-insights.png') });
   });
 });

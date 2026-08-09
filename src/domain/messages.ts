@@ -35,6 +35,7 @@ import {
 import type { GeneratedTrapCandidate } from './trap';
 import { CONCEPT_ID_PATTERN, type ConceptId } from './trap';
 import { DELF_LEVELS, type DelfLevel } from './delf';
+import type { LearningStatsSnapshot } from './stats';
 
 export const MESSAGE_TYPES = [
   'START_SESSION',
@@ -63,8 +64,10 @@ export type MessageType = (typeof MESSAGE_TYPES)[number];
  *     `globalAbility`/`skipped`, and GENERATE_TRAPS carries `delfLevel`.
  * v3: GET_STATUS includes bounded learner-facing vocabulary rows.
  * v4: RECORD_ANSWER centralizes contextual and popup-practice persistence.
+ * v5: GET_STATUS includes a bounded local learning-activity snapshot.
+ * v6: GET_STATUS includes the learner's current daily streak.
  */
-export const MESSAGE_CONTRACT_VERSION = 4;
+export const MESSAGE_CONTRACT_VERSION = 6;
 
 // ---------------------------------------------------------------------------
 // Payloads
@@ -197,6 +200,7 @@ export interface StatusData {
   globalAbility: number;
   phase: MoonPhase;
   summary: MasterySummary;
+  stats: LearningStatsSnapshot;
   vocabulary: VocabularyItem[];
   provider: {
     /** True once a server origin has been configured at build time. */

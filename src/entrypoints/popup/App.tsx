@@ -18,6 +18,8 @@ import {
 import { STALE_WORKER_MESSAGE, type Result } from '../../domain/errors';
 import { unsupportedReasonText } from '../../domain/url-support';
 import { Moon, PHASE_DESCRIPTION, PHASE_LABEL } from '../../content/ui/Moon';
+import { OrbitLogo } from '../../content/ui/OrbitLogo';
+import { OrbitRing } from '../../content/ui/OrbitRing';
 import { LEARNING_PHASES, type LearningPhase, type VocabularyItem } from '../../domain/profile';
 import { createInteractionId } from '../../domain/ids';
 import {
@@ -25,6 +27,12 @@ import {
   isPracticeAnswerCorrect,
   isVocabularyDue,
 } from '../../domain/practice';
+import {
+  sevenDayAnswerDelta,
+  successRate,
+  summarizeActivityRange,
+  type LearningStatsSnapshot,
+} from '../../domain/stats';
 
 type Phase = 'loading' | 'onboarding' | 'ready' | 'activating' | 'active';
 type PopupTab = 'session' | 'vocabulary' | 'stats' | 'settings';
@@ -37,6 +45,31 @@ const TABS: readonly { id: PopupTab; label: string }[] = [
 ];
 
 const PHASE_ORDER: readonly LearningPhase[] = LEARNING_PHASES;
+
+const CELESTIAL_STARS = [
+  { left: '7%', top: '8%', size: 2, delay: '-1.4s', duration: '4.8s' },
+  { left: '10%', top: '80%', size: 2, delay: '-2.2s', duration: '4.1s' },
+  { left: '14%', top: '56%', size: 3, delay: '-0.5s', duration: '5.3s' },
+  { left: '18%', top: '39%', size: 1, delay: '-3.1s', duration: '5.6s' },
+  { left: '22%', top: '9%', size: 1, delay: '-3.7s', duration: '4.5s' },
+  { left: '26%', top: '83%', size: 1, delay: '-1.1s', duration: '3.9s' },
+  { left: '29%', top: '18%', size: 2, delay: '-0.8s', duration: '6.2s' },
+  { left: '35%', top: '33%', size: 2, delay: '-2.6s', duration: '4.3s' },
+  { left: '39%', top: '66%', size: 1, delay: '-4.6s', duration: '5.2s' },
+  { left: '44%', top: '91%', size: 3, delay: '-3.4s', duration: '5.7s' },
+  { left: '51%', top: '11%', size: 1, delay: '-2.4s', duration: '4.4s' },
+  { left: '54%', top: '63%', size: 2, delay: '-1.7s', duration: '4.9s' },
+  { left: '59%', top: '48%', size: 2, delay: '-5.2s', duration: '6.8s' },
+  { left: '63%', top: '82%', size: 1, delay: '-0.3s', duration: '3.8s' },
+  { left: '69%', top: '28%', size: 1, delay: '-1.9s', duration: '5.9s' },
+  { left: '72%', top: '8%', size: 3, delay: '-4.1s', duration: '5.5s' },
+  { left: '77%', top: '73%', size: 2, delay: '-3.8s', duration: '6.4s' },
+  { left: '82%', top: '45%', size: 2, delay: '-2.1s', duration: '4.6s' },
+  { left: '88%', top: '15%', size: 2, delay: '-0.4s', duration: '5.1s' },
+  { left: '90%', top: '88%', size: 1, delay: '-3.9s', duration: '4.2s' },
+  { left: '94%', top: '56%', size: 1, delay: '-2.9s', duration: '4.7s' },
+  { left: '97%', top: '34%', size: 2, delay: '-1.3s', duration: '5.4s' },
+] as const;
 
 function staleWorkerFailure(detail?: string): Result<never> {
   return {
@@ -73,6 +106,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
   const [confirmingReset, setConfirmingReset] = useState(false);
+  const [pendingPracticeLaunch, setPendingPracticeLaunch] = useState(false);
 
   const refresh = useCallback(async () => {
     const result = await send<StatusData>({ type: 'GET_STATUS' });
@@ -183,6 +217,15 @@ export function App() {
     [refresh],
   );
 
+  const openPractice = useCallback(() => {
+    setPendingPracticeLaunch(true);
+    setActiveTab('vocabulary');
+  }, []);
+
+  const consumePracticeLaunch = useCallback(() => {
+    setPendingPracticeLaunch(false);
+  }, []);
+
   if (phase === 'loading') {
     return (
       <PopupShell status={status}>
@@ -218,12 +261,18 @@ export function App() {
           <SessionView status={status} phase={phase} onStart={onStart} onStop={onStop} />
         )}
         {activeTab === 'vocabulary' && (
-          <VocabularyView items={status?.vocabulary ?? []} onPracticeAnswer={onPracticeAnswer} />
+          <VocabularyView
+            items={status?.vocabulary ?? []}
+            onPracticeAnswer={onPracticeAnswer}
+            autoStart={pendingPracticeLaunch}
+            onAutoStartConsumed={consumePracticeLaunch}
+          />
         )}
         {activeTab === 'stats' && (
           <StatsView
             status={status}
-            onRecalibrate={phase === 'ready' ? () => setPhase('onboarding') : undefined}
+            onPractice={openPractice}
+            onRead={() => setActiveTab('session')}
           />
         )}
         {activeTab === 'settings' && (
@@ -233,6 +282,7 @@ export function App() {
             onRequestReset={() => setConfirmingReset(true)}
             onCancelReset={() => setConfirmingReset(false)}
             onReset={onReset}
+            onRecalibrate={phase === 'ready' ? () => setPhase('onboarding') : undefined}
           />
         )}
       </section>
@@ -249,34 +299,77 @@ function PopupShell({
 }) {
   return (
     <main className="popup">
-      <div className="cosmic-atmosphere" aria-hidden="true">
-        <span />
-        <span />
-      </div>
+      <CelestialBackdrop />
       <Header status={status} />
       {children}
     </main>
   );
 }
 
+function CelestialBackdrop() {
+  return (
+    <div className="cosmic-atmosphere" aria-hidden="true">
+      <div className="cosmic-motion">
+        {CELESTIAL_STARS.map((star) => (
+          <span
+            className="celestial-star"
+            key={`${star.left}-${star.top}`}
+            style={{
+              left: star.left,
+              top: star.top,
+              width: star.size,
+              height: star.size,
+              animationDelay: star.delay,
+              animationDuration: star.duration,
+            }}
+          />
+        ))}
+        <span className="shooting-star shooting-star--one" />
+        <span className="shooting-star shooting-star--two" />
+        <span className="shooting-star shooting-star--three" />
+        <span className="cosmic-orbit cosmic-orbit--gold">
+          <span className="orbiting-planet orbiting-planet--gold" />
+        </span>
+        <span className="cosmic-orbit cosmic-orbit--violet">
+          <span className="orbiting-planet orbiting-planet--violet" />
+        </span>
+        <span className="cosmic-orbit cosmic-orbit--teal">
+          <span className="orbiting-planet orbiting-planet--teal" />
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function Header({ status }: { readonly status: StatusData | null }) {
   const aiReady = Boolean(status?.provider.enabled && status.provider.permissionGranted);
+  const streak = status?.stats.currentStreak ?? 0;
   return (
     <header className="popup-header">
       <div className="brand-orbit" aria-hidden="true">
-        <Moon phase={status?.phase ?? 'crescent'} size={30} />
+        <span className="brand-eclipse" />
+        <span className="brand-moon-orbit">
+          <span className="brand-moon" />
+        </span>
       </div>
       <div className="brand-copy">
         <p className="brand-kicker">Context becomes fluency</p>
         <h1 className="popup-title">Eclipse</h1>
       </div>
-      <div
-        className="ai-beacon"
-        data-ready={String(aiReady)}
-        aria-label={aiReady ? 'AI ready' : 'AI needs attention'}
-      >
-        <span aria-hidden="true" />
-        AI
+      <div className="header-status">
+        <div className="streak-indicator" aria-label={`${streak} day learning streak`}>
+          <span aria-hidden="true">🔥</span>
+          <strong>{streak}</strong>
+          <span>day streak</span>
+        </div>
+        <div
+          className="ai-beacon"
+          data-ready={String(aiReady)}
+          aria-label={aiReady ? 'AI ready' : 'AI needs attention'}
+        >
+          <span aria-hidden="true" />
+          AI
+        </div>
       </div>
     </header>
   );
@@ -405,11 +498,16 @@ function SessionView({
     <div className="view-stack session-view">
       <section className="session-hero" data-active={String(active)}>
         <div className="session-orbit" aria-hidden="true">
-          <span className="orbit-track" />
           {(summary?.tracked ?? 0) > 0 ? (
-            <Moon phase={status?.phase ?? 'crescent'} size={76} />
+            <>
+              <OrbitRing layer="back" />
+              <span className="session-orbit-moon">
+                <Moon phase={status?.phase ?? 'crescent'} size={76} />
+              </span>
+              <OrbitRing layer="front" />
+            </>
           ) : (
-            <span className="empty-session-orbit" />
+            <OrbitLogo size={88} />
           )}
         </div>
         <div className="session-copy">
@@ -474,16 +572,22 @@ function SessionView({
 function VocabularyView({
   items,
   onPracticeAnswer,
+  autoStart,
+  onAutoStartConsumed,
 }: {
   readonly items: readonly VocabularyItem[];
   readonly onPracticeAnswer: (
     item: VocabularyItem,
     correct: boolean,
   ) => Promise<RecordAnswerData | null>;
+  readonly autoStart: boolean;
+  readonly onAutoStartConsumed: () => void;
 }) {
   const [query, setQuery] = useState('');
   const [phase, setPhase] = useState<LearningPhase | 'all'>('all');
-  const [practiceIds, setPracticeIds] = useState<string[]>([]);
+  const [practiceIds, setPracticeIds] = useState<string[]>(() =>
+    autoStart ? buildPracticeQueue(items, new Date()).map((item) => item.conceptId) : [],
+  );
   const [practiceIndex, setPracticeIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const [graded, setGraded] = useState<boolean | null>(null);
@@ -501,6 +605,10 @@ function VocabularyView({
     const text = `${item.targetSurface} ${item.englishMeaning}`.toLocaleLowerCase();
     return matchesPhase && text.includes(normalized);
   });
+
+  useEffect(() => {
+    if (autoStart) onAutoStartConsumed();
+  }, [autoStart, onAutoStartConsumed]);
 
   function startPractice(firstConceptId?: string) {
     const queue = buildPracticeQueue(items, new Date()).map((item) => item.conceptId);
@@ -912,98 +1020,513 @@ function reviewTiming(item: VocabularyItem): string {
   return `Review in ${days} ${days === 1 ? 'day' : 'days'}`;
 }
 
+type StatsPeriod = 7 | 30;
+
 function StatsView({
   status,
-  onRecalibrate,
+  onPractice,
+  onRead,
 }: {
   readonly status: StatusData | null;
-  readonly onRecalibrate?: () => void;
+  readonly onPractice: () => void;
+  readonly onRead: () => void;
 }) {
+  const [period, setPeriod] = useState<StatsPeriod>(7);
   const summary = status?.summary;
-  const score = accuracy(summary?.correct ?? 0, summary?.attempts ?? 0);
-  const phase = status?.phase ?? 'new_moon';
   const total = summary?.tracked ?? 0;
+  const eligible = status?.vocabulary.filter((item) => item.phase !== 'full').length ?? 0;
+  const days = status?.stats?.days ?? [];
+  const visibleDays = days.slice(-period);
+  const range = summarizeActivityRange(visibleDays);
+  const streak = status?.stats.currentStreak ?? 0;
+  const delta = period === 7 && status?.stats ? sevenDayAnswerDelta(status.stats) : null;
+  const incomplete = Boolean(
+    status?.stats &&
+    visibleDays[0] &&
+    Date.parse(status.stats.completeSince) > localDateFromKey(visibleDays[0].date).getTime(),
+  );
+  const actionLabel =
+    (summary?.due ?? 0) > 0
+      ? 'Review now'
+      : eligible > 0
+        ? 'Practice weakest'
+        : 'Read another article';
+  const onAction = eligible > 0 ? onPractice : onRead;
 
   return (
     <div className="view-stack stats-view">
-      <ViewHeading
-        eyebrow="Your reading orbit"
-        title="Stats & moon"
-        copy="Progress built from contextual answers"
-      />
+      <div className="stats-title-row">
+        <ViewHeading
+          eyebrow="Your reading orbit"
+          title="Learning momentum"
+          copy="Recent practice, recall, and current mastery"
+        />
+        {total > 0 && <PeriodToggle value={period} onChange={setPeriod} />}
+      </div>
 
       {total === 0 ? (
-        <EmptyState
-          title="Your first word is waiting."
-          copy="Start an Eclipse session and answer a highlighted word to begin your mastery orbit."
-        />
+        <div className="stats-empty-state">
+          <EmptyState
+            title="Your first word is waiting."
+            copy="Start an Eclipse session and answer a highlighted word to begin your mastery orbit."
+          />
+          <button type="button" className="primary-action compact-action" onClick={onRead}>
+            Read another article
+          </button>
+        </div>
       ) : (
-        <section className="mastery-orbit-card">
-          <div
-            className="mastery-orbit"
-            style={{ '--orbit-progress': `${score * 3.6}deg` } as React.CSSProperties}
-          >
-            <Moon phase={phase} size={74} />
-            <span>{score}%</span>
-          </div>
-          <div>
-            <p className="card-label">Overall phase</p>
-            <h3>{PHASE_LABEL[phase]}</h3>
-            <p>{PHASE_DESCRIPTION[phase]}.</p>
-          </div>
-        </section>
-      )}
-
-      <ul className="metric-grid" aria-label="Learning statistics">
-        <li>
-          <span>Answers</span>
-          <strong>{summary?.attempts ?? 0}</strong>
-        </li>
-        <li>
-          <span>Correct</span>
-          <strong>{summary?.correct ?? 0}</strong>
-        </li>
-        <li>
-          <span>Due</span>
-          <strong>{summary?.due ?? 0}</strong>
-        </li>
-        <li>
-          <span>DELF lens</span>
-          <strong>{status?.delfLevel ?? 'B1'}</strong>
-        </li>
-      </ul>
-
-      {total > 0 && (
-        <section className="phase-distribution" aria-labelledby="phase-distribution-title">
-          <div className="section-heading">
-            <h3 id="phase-distribution-title">Mastery constellation</h3>
-            <span>{total} total</span>
-          </div>
-          {PHASE_ORDER.map((value) => {
-            const count = summary?.byPhase[value] ?? 0;
-            const width = total === 0 ? 0 : (count / total) * 100;
-            return (
-              <div className="phase-bar" key={value}>
-                <span>{PHASE_LABEL[value]}</span>
-                <div>
-                  <i style={{ width: `${width}%` }} />
-                </div>
-                <strong>{count}</strong>
+        <>
+          <section className="momentum-card" aria-label={`${period}-day learning momentum`}>
+            <div className="momentum-metrics">
+              <div>
+                <span>Answers</span>
+                <strong>{range.answers}</strong>
+                <small>
+                  {period === 7
+                    ? delta === null
+                      ? 'Building your baseline'
+                      : `${delta >= 0 ? '+' : '−'}${Math.abs(delta)} vs previous week`
+                    : `${period}-day window`}
+                </small>
               </div>
+              <div>
+                <span>Current streak</span>
+                <strong className="momentum-streak">
+                  <span aria-hidden="true">🔥</span>
+                  {streak}
+                </strong>
+                <small>day streak</small>
+              </div>
+            </div>
+            <div className="stats-action-row">
+              <div>
+                <strong>{summary?.due ?? 0}</strong>
+                <span>due now</span>
+              </div>
+              <button type="button" className="secondary-action" onClick={onAction}>
+                {actionLabel}
+              </button>
+            </div>
+          </section>
+
+          <ActivityChart days={visibleDays} period={period} />
+
+          {incomplete && status?.stats && (
+            <p className="history-baseline">
+              Complete tracking since {formatTimestampDate(status.stats.completeSince)}
+            </p>
+          )}
+
+          <ModeSuccess summary={range} />
+          <MasteryDistribution
+            total={total}
+            byPhase={summary?.byPhase ?? { crescent: 0, half: 0, full: 0 }}
+          />
+          <StatsInterpretation
+            period={period}
+            range={range}
+            delta={delta}
+            streak={streak}
+            total={total}
+            byPhase={summary?.byPhase ?? { crescent: 0, half: 0, full: 0 }}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+function PeriodToggle({
+  value,
+  onChange,
+}: {
+  readonly value: StatsPeriod;
+  readonly onChange: (period: StatsPeriod) => void;
+}) {
+  return (
+    <div className="period-toggle" role="group" aria-label="Activity period">
+      {([7, 30] as const).map((period) => (
+        <button
+          type="button"
+          key={period}
+          aria-pressed={value === period}
+          onClick={() => onChange(period)}
+        >
+          {period} days
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ActivityChart({
+  days,
+  period,
+}: {
+  readonly days: LearningStatsSnapshot['days'];
+  readonly period: StatsPeriod;
+}) {
+  const [selectedIndex, setSelectedIndex] = useState(Math.max(0, days.length - 1));
+  const firstDate = days[0]?.date;
+  const lastDate = days.at(-1)?.date;
+
+  useEffect(() => {
+    setSelectedIndex(Math.max(0, days.length - 1));
+  }, [firstDate, lastDate, days.length]);
+
+  const totals = days.map((day) => day.contextAttempts + day.recallAttempts);
+  const periodEmpty = totals.every((answers) => answers === 0);
+  const maximum = Math.max(1, ...totals);
+  const selected = days[selectedIndex] ?? days.at(-1);
+  const selectedAnswers = selected ? selected.contextAttempts + selected.recallAttempts : 0;
+  const selectedCorrect = selected ? selected.contextCorrect + selected.recallCorrect : 0;
+
+  function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    let next = selectedIndex;
+    if (event.key === 'ArrowLeft') next = Math.max(0, selectedIndex - 1);
+    else if (event.key === 'ArrowRight') next = Math.min(days.length - 1, selectedIndex + 1);
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = Math.max(0, days.length - 1);
+    else return;
+    event.preventDefault();
+    setSelectedIndex(next);
+  }
+
+  return (
+    <figure className="activity-card" aria-labelledby="activity-chart-title">
+      <figcaption className="section-heading">
+        <h3 id="activity-chart-title">Answers per day</h3>
+        <span>{period}-day view</span>
+      </figcaption>
+      <div
+        className="activity-chart"
+        role="group"
+        tabIndex={0}
+        aria-label={`Answers per day for the last ${period} days. Use left and right arrow keys to inspect a day.`}
+        aria-describedby="activity-day-readout"
+        onKeyDown={onKeyDown}
+      >
+        <div className="activity-bars" aria-hidden="true">
+          {days.map((day, index) => {
+            const answers = totals[index] ?? 0;
+            const height = answers === 0 ? 0 : Math.max(8, (answers / maximum) * 100);
+            return (
+              <span
+                key={day.date}
+                data-selected={String(index === selectedIndex)}
+                data-empty={String(answers === 0)}
+                style={{ '--activity-height': `${height}%` } as React.CSSProperties}
+                onPointerEnter={() => setSelectedIndex(index)}
+              >
+                <i />
+              </span>
             );
           })}
-        </section>
-      )}
+        </div>
+        <div className="activity-axis" aria-hidden="true">
+          <span>{firstDate ? formatActivityDate(firstDate) : '—'}</span>
+          <span>{lastDate ? formatActivityDate(lastDate) : '—'}</span>
+        </div>
+      </div>
+      <p id="activity-day-readout" className="activity-readout" aria-live="polite">
+        {periodEmpty
+          ? `No answers in this ${period}-day period yet.`
+          : selected
+            ? selectedAnswers === 0
+              ? `${formatActivityDate(selected.date)} · No answers`
+              : `${formatActivityDate(selected.date)} · ${selectedAnswers} ${selectedAnswers === 1 ? 'answer' : 'answers'} · ${selectedCorrect} correct`
+            : 'No answers in this period yet.'}
+      </p>
+      <ol className="visually-hidden">
+        {days.map((day) => {
+          const answers = day.contextAttempts + day.recallAttempts;
+          const correct = day.contextCorrect + day.recallCorrect;
+          return (
+            <li key={day.date}>
+              {formatActivityDate(day.date)}: {answers} answers, {correct} correct
+            </li>
+          );
+        })}
+      </ol>
+    </figure>
+  );
+}
 
-      <button
-        type="button"
-        className="secondary-action"
-        onClick={onRecalibrate}
-        disabled={!onRecalibrate}
+function ModeSuccess({ summary }: { readonly summary: ReturnType<typeof summarizeActivityRange> }) {
+  const modes = [
+    {
+      id: 'context',
+      label: 'Context success',
+      attempts: summary.contextAttempts,
+      correct: summary.contextCorrect,
+    },
+    {
+      id: 'recall',
+      label: 'Recall success',
+      attempts: summary.recallAttempts,
+      correct: summary.recallCorrect,
+    },
+  ] as const;
+
+  return (
+    <section className="mode-success-grid" aria-label="Success by answer mode">
+      {modes.map((mode) => {
+        const rate = successRate(mode.correct, mode.attempts);
+        return (
+          <div key={mode.id} data-mode={mode.id}>
+            <span>{mode.label}</span>
+            <strong>{rate === null ? '—' : `${rate}%`}</strong>
+            <div
+              className="success-meter"
+              role="img"
+              aria-label={
+                rate === null
+                  ? `${mode.label}: no attempts in this period`
+                  : `${mode.label}: ${rate} percent`
+              }
+            >
+              <i style={{ width: `${rate ?? 0}%` }} />
+            </div>
+            <small>
+              {mode.attempts === 0
+                ? `No ${mode.id} answers yet`
+                : `${mode.correct}/${mode.attempts} correct`}
+            </small>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+function MasteryDistribution({
+  total,
+  byPhase,
+}: {
+  readonly total: number;
+  readonly byPhase: Record<LearningPhase, number>;
+}) {
+  return (
+    <section className="mastery-distribution" aria-labelledby="mastery-distribution-title">
+      <div className="section-heading">
+        <h3 id="mastery-distribution-title">Current mastery</h3>
+        <span>
+          {byPhase.full}/{total} mastered
+        </span>
+      </div>
+      <div
+        className="mastery-track"
+        role="img"
+        aria-label={`${byPhase.crescent} learning, ${byPhase.half} building, ${byPhase.full} mastered`}
       >
-        {onRecalibrate ? 'Recalibrate DELF lens' : 'End the session to recalibrate'}
-      </button>
-    </div>
+        {PHASE_ORDER.map((phase) => (
+          <i
+            key={phase}
+            data-phase={phase}
+            style={{ width: `${total === 0 ? 0 : (byPhase[phase] / total) * 100}%` }}
+          />
+        ))}
+      </div>
+      <ul className="mastery-legend">
+        {PHASE_ORDER.map((phase) => (
+          <li key={phase} data-phase={phase}>
+            <span aria-hidden="true" />
+            <strong>{byPhase[phase]}</strong> {PHASE_LABEL[phase]}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function StatsInterpretation({
+  period,
+  range,
+  delta,
+  streak,
+  total,
+  byPhase,
+}: {
+  readonly period: StatsPeriod;
+  readonly range: ReturnType<typeof summarizeActivityRange>;
+  readonly delta: number | null;
+  readonly streak: number;
+  readonly total: number;
+  readonly byPhase: Record<LearningPhase, number>;
+}) {
+  const contextRate = successRate(range.contextCorrect, range.contextAttempts);
+  const recallRate = successRate(range.recallCorrect, range.recallAttempts);
+  const insights = [
+    momentumInsight(period, range.answers, streak, delta),
+    modeInsight(contextRate, recallRate),
+    masteryInsight(total, byPhase),
+  ];
+
+  return (
+    <section className="stats-interpretation" aria-labelledby="stats-interpretation-title">
+      <div className="section-heading">
+        <h3 id="stats-interpretation-title">What the data says</h3>
+        <span>{period}-day signals</span>
+      </div>
+      <ul>
+        {insights.map((insight) => (
+          <li key={insight.label} data-signal={insight.signal}>
+            <span>{insight.label}</span>
+            <strong>{insight.title}</strong>
+            <p>{insight.copy}</p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+interface StatsInsight {
+  readonly label: string;
+  readonly title: string;
+  readonly copy: string;
+  readonly signal: 'momentum' | 'mode' | 'mastery';
+}
+
+function momentumInsight(
+  period: StatsPeriod,
+  answers: number,
+  streak: number,
+  delta: number | null,
+): StatsInsight {
+  if (answers === 0) {
+    return {
+      label: 'Momentum',
+      title: 'Ready for a fresh start',
+      copy: `No answers landed in this ${period}-day window. One short review will restart the trend.`,
+      signal: 'momentum',
+    };
+  }
+  if (period === 7 && delta !== null) {
+    if (delta > 0) {
+      return {
+        label: 'Momentum',
+        title: 'Momentum is rising',
+        copy: `${delta} more ${delta === 1 ? 'answer' : 'answers'} than the previous week.`,
+        signal: 'momentum',
+      };
+    }
+    if (delta < 0) {
+      return {
+        label: 'Momentum',
+        title: 'Momentum eased',
+        copy: `${Math.abs(delta)} fewer ${Math.abs(delta) === 1 ? 'answer' : 'answers'} than the previous week. A short review can close the gap.`,
+        signal: 'momentum',
+      };
+    }
+    return {
+      label: 'Momentum',
+      title: 'Momentum is steady',
+      copy: `You matched the previous week with ${answers} ${answers === 1 ? 'answer' : 'answers'}.`,
+      signal: 'momentum',
+    };
+  }
+  return {
+    label: 'Daily streak',
+    title: streak > 0 ? `${streak}-day streak in motion` : 'Start a daily streak',
+    copy:
+      streak > 0
+        ? 'Answer one highlighted word correctly today to keep the flame going.'
+        : 'One correct highlighted word starts a new streak.',
+    signal: 'momentum',
+  };
+}
+
+function modeInsight(contextRate: number | null, recallRate: number | null): StatsInsight {
+  if (contextRate === null && recallRate === null) {
+    return {
+      label: 'Skill balance',
+      title: 'More evidence needed',
+      copy: 'Answer in context and complete typed recall to compare recognition with memory.',
+      signal: 'mode',
+    };
+  }
+  if (contextRate === null) {
+    return {
+      label: 'Skill balance',
+      title: 'Context needs a first sample',
+      copy: `Typed recall is at ${recallRate}%; answer a contextual prompt to complete the comparison.`,
+      signal: 'mode',
+    };
+  }
+  if (recallRate === null) {
+    return {
+      label: 'Skill balance',
+      title: 'Recall needs a first sample',
+      copy: `Context recognition is at ${contextRate}%; practice a typed meaning to measure recall.`,
+      signal: 'mode',
+    };
+  }
+
+  const gap = Math.abs(contextRate - recallRate);
+  if (gap <= 5) {
+    return {
+      label: 'Skill balance',
+      title: 'Recognition and recall are balanced',
+      copy: `The two modes are within ${gap} percentage ${gap === 1 ? 'point' : 'points'} of each other.`,
+      signal: 'mode',
+    };
+  }
+  if (contextRate > recallRate) {
+    return {
+      label: 'Skill balance',
+      title: 'Recall is the next opportunity',
+      copy: `Context recognition leads typed recall by ${gap} percentage points. Practice weakest to close the gap.`,
+      signal: 'mode',
+    };
+  }
+  return {
+    label: 'Skill balance',
+    title: 'Recall is transferring well',
+    copy: `Typed recall leads context recognition by ${gap} percentage points.`,
+    signal: 'mode',
+  };
+}
+
+function masteryInsight(total: number, byPhase: Record<LearningPhase, number>): StatsInsight {
+  if (byPhase.full === total) {
+    return {
+      label: 'Mastery',
+      title: 'Everything tracked is mastered',
+      copy: `${total} ${total === 1 ? 'word has' : 'words have'} reached Full Moon. Read another article to expand the deck.`,
+      signal: 'mastery',
+    };
+  }
+  if (byPhase.half > 0) {
+    return {
+      label: 'Mastery',
+      title: `${byPhase.half} ${byPhase.half === 1 ? 'word is' : 'words are'} close to mastery`,
+      copy: `Building words are closest to Full Moon; ${total - byPhase.full} ${total - byPhase.full === 1 ? 'word is' : 'words are'} still developing.`,
+      signal: 'mastery',
+    };
+  }
+  return {
+    label: 'Mastery',
+    title: byPhase.full > 0 ? 'Mastery is taking hold' : 'Mastery is just beginning',
+    copy: `${byPhase.full} mastered; ${total - byPhase.full} still developing through recall.`,
+    signal: 'mastery',
+  };
+}
+
+function localDateFromKey(value: string): Date {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year ?? 0, (month ?? 1) - 1, day ?? 1);
+}
+
+function formatActivityDate(value: string): string {
+  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(
+    localDateFromKey(value),
+  );
+}
+
+function formatTimestampDate(value: string): string {
+  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(
+    new Date(value),
   );
 }
 
@@ -1013,12 +1536,14 @@ function SettingsView({
   onRequestReset,
   onCancelReset,
   onReset,
+  onRecalibrate,
 }: {
   readonly status: StatusData | null;
   readonly confirmingReset: boolean;
   readonly onRequestReset: () => void;
   readonly onCancelReset: () => void;
   readonly onReset: () => void;
+  readonly onRecalibrate?: () => void;
 }) {
   const providerReady = Boolean(status?.provider.configured && status.provider.permissionGranted);
   return (
@@ -1047,6 +1572,23 @@ function SettingsView({
             {status.provider.lastError}
           </p>
         )}
+      </section>
+
+      <section className="lens-settings" aria-labelledby="lens-settings-title">
+        <div className="level-seal">{status?.delfLevel ?? 'B1'}</div>
+        <div>
+          <p className="card-label">Reading lens</p>
+          <h3 id="lens-settings-title">DELF {status?.delfLevel ?? 'B1'}</h3>
+          <p>Re-run the diagnostic or choose another level.</p>
+        </div>
+        <button
+          type="button"
+          className="secondary-action"
+          onClick={onRecalibrate}
+          disabled={!onRecalibrate}
+        >
+          {onRecalibrate ? 'Recalibrate' : 'End session first'}
+        </button>
       </section>
 
       <section className="settings-list" aria-label="Extension information">

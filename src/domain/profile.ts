@@ -8,7 +8,7 @@ import { CONCEPT_ID_PATTERN, type ConceptId } from './trap';
 import { DELF_LEVELS, type DelfLevel } from './delf';
 import { retrievabilityOf } from './scheduling';
 
-export const PROFILE_SCHEMA_VERSION = 2;
+export const PROFILE_SCHEMA_VERSION = 4;
 
 /** Most concept records retained. Oldest-updated entries are evicted first. */
 export const MAX_CONCEPT_RECORDS = 500;
@@ -18,6 +18,7 @@ export const RECENT_OUTCOMES_LIMIT = 5;
 export const REVIEW_EVENT_LIMIT = 40;
 export const SUCCESSFUL_REVIEW_DAY_LIMIT = 366;
 export const CONTEXT_FINGERPRINT_LIMIT = 80;
+export const ACTIVITY_DAY_LIMIT = 30;
 
 export const MOON_PHASES = ['new_moon', 'crescent', 'half', 'full'] as const;
 export type MoonPhase = (typeof MOON_PHASES)[number];
@@ -53,6 +54,29 @@ export interface ReviewEvent {
   scheduled: boolean;
   schedulerRating: SchedulerRating;
   contextFingerprint?: string;
+}
+
+export interface DailyLearningActivity {
+  /** Local device calendar date in YYYY-MM-DD form. */
+  date: string;
+  contextAttempts: number;
+  contextCorrect: number;
+  recallAttempts: number;
+  recallCorrect: number;
+}
+
+export interface ActivityHistory {
+  /** Activity is known to be complete only from this instant onward. */
+  completeSince: string;
+  /** Sparse, chronological activity buckets from the last 30 calendar days. */
+  days: DailyLearningActivity[];
+}
+
+export interface LearningStreak {
+  /** Consecutive local calendar days with a correct contextual answer. */
+  count: number;
+  /** Most recent qualifying local device date, stored as YYYY-MM-DD. */
+  lastExtendedDate?: string;
 }
 
 export interface ConceptMastery {
@@ -130,6 +154,8 @@ export interface LearnerProfile {
   globalAbility: number;
   mastery: Record<string, ConceptMastery>;
   recentOutcomes: AnswerOutcome[];
+  activity: ActivityHistory;
+  streak: LearningStreak;
 }
 
 const isoDate = z.string().refine((value) => !Number.isNaN(Date.parse(value)), {
@@ -164,6 +190,27 @@ export const reviewEventSchema: z.ZodType<ReviewEvent> = z.object({
   scheduled: z.boolean(),
   schedulerRating: z.enum(['again', 'hard', 'good']),
   contextFingerprint: z.string().min(1).max(120).optional(),
+});
+
+export const dailyLearningActivitySchema: z.ZodType<DailyLearningActivity> = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  contextAttempts: z.number().int().min(0),
+  contextCorrect: z.number().int().min(0),
+  recallAttempts: z.number().int().min(0),
+  recallCorrect: z.number().int().min(0),
+});
+
+export const activityHistorySchema: z.ZodType<ActivityHistory> = z.object({
+  completeSince: isoDate,
+  days: z.array(dailyLearningActivitySchema).max(ACTIVITY_DAY_LIMIT),
+});
+
+export const learningStreakSchema: z.ZodType<LearningStreak> = z.object({
+  count: z.number().int().min(0),
+  lastExtendedDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
 });
 
 export const conceptMasterySchema = z.object({
@@ -211,10 +258,12 @@ export const learnerProfileSchema = z.object({
   globalAbility: z.number().min(-1).max(1),
   mastery: z.record(z.string().regex(CONCEPT_ID_PATTERN), conceptMasterySchema),
   recentOutcomes: z.array(answerOutcomeSchema).max(RECENT_OUTCOMES_LIMIT),
+  activity: activityHistorySchema,
+  streak: learningStreakSchema,
 });
 
 /** A brand-new profile. Calibration has not run; ability sits at the midpoint. */
-export function createEmptyProfile(): LearnerProfile {
+export function createEmptyProfile(now = new Date()): LearnerProfile {
   return {
     schemaVersion: PROFILE_SCHEMA_VERSION,
     sourceLocale: 'en',
@@ -224,6 +273,11 @@ export function createEmptyProfile(): LearnerProfile {
     globalAbility: 0,
     mastery: {},
     recentOutcomes: [],
+    activity: {
+      completeSince: now.toISOString(),
+      days: [],
+    },
+    streak: { count: 0 },
   };
 }
 

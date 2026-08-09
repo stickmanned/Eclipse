@@ -42,9 +42,9 @@ test.describe('1–2. first run', () => {
     });
 
     expect(dimensions).toEqual({
-      rootWidth: '340px',
+      rootWidth: '420px',
       rootHeight: '600px',
-      bodyWidth: '340px',
+      bodyWidth: '420px',
       bodyHeight: '600px',
       overflowX: 'hidden',
       overflowY: 'auto',
@@ -112,9 +112,17 @@ test.describe('1–2. first run', () => {
 
 test.describe('2b. the message contract', () => {
   test('reports its contract version so the popup can spot a stale worker', async ({ driver }) => {
-    const status = await send<{ contractVersion: number }>(driver, { type: 'GET_STATUS' });
+    const status = await send<{
+      contractVersion: number;
+      stats: { completeSince: string; currentStreak: number; days: unknown[] };
+    }>(driver, { type: 'GET_STATUS' });
     expect(status.ok).toBe(true);
-    if (status.ok) expect(status.data.contractVersion).toBe(MESSAGE_CONTRACT_VERSION);
+    if (status.ok) {
+      expect(status.data.contractVersion).toBe(MESSAGE_CONTRACT_VERSION);
+      expect(status.data.stats.completeSince).toBeTruthy();
+      expect(status.data.stats.currentStreak).toBe(0);
+      expect(status.data.stats.days).toHaveLength(30);
+    }
   });
 
   test('answers every message it cannot handle instead of dropping it', async ({ driver }) => {

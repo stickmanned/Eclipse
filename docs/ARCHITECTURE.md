@@ -52,7 +52,7 @@ Article analysis, trap selection, every DOM mutation, restoration, and contextua
 
 ### The popup owns presentation
 
-It reads status and sends intents. Its French-to-English typed practice sends `RECORD_ANSWER`; it never reaches into storage. DELF setup similarly routes through `SAVE_CALIBRATION` rather than mutating the profile.
+It reads status and sends intents. `GET_STATUS` includes a zero-filled, bounded thirty-day activity snapshot and the current streak count; raw review events stay worker-owned. Its French-to-English typed practice sends `RECORD_ANSWER`; it never reaches into storage. DELF setup similarly routes through `SAVE_CALIBRATION` rather than mutating the profile.
 
 ## Why Eclipse needs no article host permissions
 
@@ -142,7 +142,7 @@ Scheduling is owned by the exact-pinned `ts-fsrs` package with a 0.90 desired-re
 
 | Key                            | Area      | Contents                                                   |
 | ------------------------------ | --------- | ---------------------------------------------------------- |
-| `eclipse:profile:v1`           | `local`   | The learner profile                                        |
+| `eclipse:profile:v1`           | `local`   | Mastery, 30-day activity history, and the daily streak     |
 | `eclipse:interactions:v1`      | `local`   | Last 200 interaction ids, for idempotency                  |
 | `eclipse:provider-cache:v1`    | `local`   | Up to 100 sentence-free templates, keyed by scoped SHA-256 |
 | `eclipse:provider-settings:v1` | `local`   | AI readiness and the most recent service error             |
@@ -151,6 +151,8 @@ Scheduling is owned by the exact-pinned `ts-fsrs` package with a 0.90 desired-re
 Two policies worth calling out:
 
 - **A profile that fails validation is never silently replaced.** Eclipse reports `PROFILE_INCOMPATIBLE` and leaves the bytes untouched, so a schema bug in a future version cannot quietly delete someone's progress. Resetting is an explicit, confirmed user action.
+- **Activity is aggregated at the answer writer.** Each applied interaction increments one local-calendar bucket; replayed interaction ids cannot double-count it. A v2 profile backfills whatever its retained review events can prove and marks only post-migration history as complete.
+- **The streak is durable beyond the chart window.** One correct contextual answer extends it once per local calendar date. Additional answers that day, recall practice, incorrect answers, and replayed interaction ids do not extend it. It remains live through the following day and resets after one complete missed day.
 - **The provider cache never stores the full submitted sentence.** Keys are SHA-256 digests scoped to locale, model, prompt, and schema revisions. Cached templates retain the short source/clue fields needed for the exercise, are rebound to the current sentence, and are re-validated on read, so an older or laxer entry cannot bypass current validation.
 
 ## Failure vocabulary

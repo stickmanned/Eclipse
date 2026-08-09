@@ -26,10 +26,57 @@ const { App } = await import('@/entrypoints/popup/App');
 const { MESSAGE_CONTRACT_VERSION, parseMessage } = await import('@/domain/messages');
 const { STALE_WORKER_MESSAGE } = await import('@/domain/errors');
 
-interface StatusOverrides {
-  contractVersion?: number;
-  calibrationCompleted?: boolean;
-  vocabulary?: StatusData['vocabulary'];
+type StatusOverrides = Partial<StatusData>;
+
+function statsData(): StatusData['stats'] {
+  const end = new Date(2026, 7, 9, 12, 0, 0, 0);
+  return {
+    completeSince: new Date(2026, 6, 1, 0, 0, 0, 0).toISOString(),
+    currentStreak: 2,
+    days: Array.from({ length: 30 }, (_, index) => {
+      const date = new Date(end);
+      date.setDate(end.getDate() - (29 - index));
+      const key = [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, '0'),
+        String(date.getDate()).padStart(2, '0'),
+      ].join('-');
+      if (index === 27) {
+        return {
+          date: key,
+          contextAttempts: 2,
+          contextCorrect: 1,
+          recallAttempts: 0,
+          recallCorrect: 0,
+        };
+      }
+      if (index === 28) {
+        return {
+          date: key,
+          contextAttempts: 0,
+          contextCorrect: 0,
+          recallAttempts: 1,
+          recallCorrect: 1,
+        };
+      }
+      if (index === 29) {
+        return {
+          date: key,
+          contextAttempts: 1,
+          contextCorrect: 1,
+          recallAttempts: 1,
+          recallCorrect: 1,
+        };
+      }
+      return {
+        date: key,
+        contextAttempts: 0,
+        contextCorrect: 0,
+        recallAttempts: 0,
+        recallCorrect: 0,
+      };
+    }),
+  };
 }
 
 const trackedVocabulary: StatusData['vocabulary'][number] = {
@@ -52,7 +99,7 @@ const trackedVocabulary: StatusData['vocabulary'][number] = {
   updatedAt: '2026-08-08T12:00:00.000Z',
 };
 
-function statusData(overrides: StatusOverrides = {}) {
+function statusData(overrides: StatusOverrides = {}): StatusData {
   return {
     contractVersion: MESSAGE_CONTRACT_VERSION,
     activeTabId: null,
@@ -71,6 +118,7 @@ function statusData(overrides: StatusOverrides = {}) {
       byPhase: { crescent: 0, half: 0, full: 0 },
       overallPhase: 'new_moon' as const,
     },
+    stats: statsData(),
     vocabulary: [],
     provider: {
       configured: true,
@@ -355,6 +403,293 @@ describe('the popup against a worker on the current contract', () => {
     expect(text()).toContain('1 of 2');
     await click('Next word');
     expect(text()).toContain('2 of 2');
+  });
+
+  it('renders recent momentum, mode success, and current mastery', async () => {
+    sendMessage.mockImplementation((message: { type: string }) => {
+      if (message.type === 'GET_STATUS') {
+        return Promise.resolve({
+          ok: true,
+          data: statusData({
+            calibrationCompleted: true,
+            phase: 'crescent',
+            summary: {
+              tracked: 1,
+              attempts: 5,
+              correct: 4,
+              due: 1,
+              byPhase: { crescent: 1, half: 0, full: 0 },
+              overallPhase: 'crescent',
+            },
+            vocabulary: [trackedVocabulary],
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, data: {} });
+    });
+
+    await mount();
+    await click('Stats');
+
+    expect(text()).toContain('Learning momentum');
+    expect(container.querySelector('.momentum-metrics')?.textContent).toContain('5');
+    expect(container.querySelector('.momentum-metrics')?.textContent).toContain('2day streak');
+    const streakIndicator = container.querySelector('.streak-indicator');
+    expect(streakIndicator?.textContent).toContain('🔥2day streak');
+    expect(streakIndicator?.getAttribute('aria-label')).toBe('2 day learning streak');
+    expect(
+      Array.from(container.querySelector('.header-status')?.children ?? []).map(
+        (element) => element.className,
+      ),
+    ).toEqual(['streak-indicator', 'ai-beacon']);
+    expect(text()).toContain('+5 vs previous week');
+    expect(text()).toContain('Context success67%2/3 correct');
+    expect(text()).toContain('Recall success100%2/2 correct');
+    expect(text()).toContain('0/1 mastered');
+    expect(text()).toContain('What the data says');
+    expect(text()).toContain('Momentum is rising');
+    expect(text()).toContain('Recall is transferring well');
+    expect(text()).toContain('Mastery is just beginning');
+    expect(container.querySelectorAll('.success-meter')).toHaveLength(2);
+    expect(button('Review now')).toBeDefined();
+  });
+
+  it('switches periods and supports keyboard inspection of chart days', async () => {
+    sendMessage.mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        data: statusData({
+          calibrationCompleted: true,
+          summary: {
+            tracked: 1,
+            attempts: 5,
+            correct: 4,
+            due: 1,
+            byPhase: { crescent: 1, half: 0, full: 0 },
+            overallPhase: 'crescent',
+          },
+          vocabulary: [trackedVocabulary],
+        }),
+      }),
+    );
+
+    await mount();
+    await click('Stats');
+    expect(text()).toContain('Aug 9 · 2 answers · 2 correct');
+
+    const chart = container.querySelector<HTMLElement>('.activity-chart');
+    await act(async () => {
+      chart?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }),
+      );
+    });
+    expect(text()).toContain('Aug 8 · 1 answer · 1 correct');
+
+    await click('30 days');
+    expect(button('30 days')?.getAttribute('aria-pressed')).toBe('true');
+    expect(text()).toContain('30-day view');
+  });
+
+  it('launches the due-first practice queue directly from Stats', async () => {
+    sendMessage.mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        data: statusData({
+          calibrationCompleted: true,
+          summary: {
+            tracked: 1,
+            attempts: 2,
+            correct: 1,
+            due: 1,
+            byPhase: { crescent: 1, half: 0, full: 0 },
+            overallPhase: 'crescent',
+          },
+          vocabulary: [trackedVocabulary],
+        }),
+      }),
+    );
+
+    await mount();
+    await click('Stats');
+    await click('Review now');
+
+    expect(text()).toContain('Active recall · 1 of 1');
+    expect(text()).toContain('attendre');
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+      'Vocab',
+    );
+  });
+
+  it('launches weakest practice when nothing is due', async () => {
+    sendMessage.mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        data: statusData({
+          calibrationCompleted: true,
+          summary: {
+            tracked: 1,
+            attempts: 1,
+            correct: 1,
+            due: 0,
+            byPhase: { crescent: 1, half: 0, full: 0 },
+            overallPhase: 'crescent',
+          },
+          vocabulary: [{ ...trackedVocabulary, due: { kind: 'none' } }],
+        }),
+      }),
+    );
+
+    await mount();
+    await click('Stats');
+    await click('Practice weakest');
+    expect(text()).toContain('Active recall · 1 of 1');
+  });
+
+  it('uses baseline copy until both comparison weeks are complete', async () => {
+    const stats = statsData();
+    stats.completeSince = new Date(2026, 7, 9, 0, 0, 0, 0).toISOString();
+    sendMessage.mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        data: statusData({
+          calibrationCompleted: true,
+          stats,
+          summary: {
+            tracked: 1,
+            attempts: 5,
+            correct: 4,
+            due: 0,
+            byPhase: { crescent: 1, half: 0, full: 0 },
+            overallPhase: 'crescent',
+          },
+          vocabulary: [{ ...trackedVocabulary, due: { kind: 'none' } }],
+        }),
+      }),
+    );
+
+    await mount();
+    await click('Stats');
+    expect(text()).toContain('Building your baseline');
+    expect(text()).toContain('Complete tracking since Aug 9');
+  });
+
+  it('explains an empty selected period while keeping practice and mastery visible', async () => {
+    const stats = statsData();
+    stats.days = stats.days.map((day) => ({
+      ...day,
+      contextAttempts: 0,
+      contextCorrect: 0,
+      recallAttempts: 0,
+      recallCorrect: 0,
+    }));
+    sendMessage.mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        data: statusData({
+          calibrationCompleted: true,
+          stats,
+          summary: {
+            tracked: 1,
+            attempts: 3,
+            correct: 2,
+            due: 0,
+            byPhase: { crescent: 1, half: 0, full: 0 },
+            overallPhase: 'crescent',
+          },
+          vocabulary: [{ ...trackedVocabulary, due: { kind: 'none' } }],
+        }),
+      }),
+    );
+
+    await mount();
+    await click('Stats');
+    expect(text()).toContain('No answers in this 7-day period yet.');
+    expect(button('Practice weakest')).toBeDefined();
+    expect(text()).toContain('Current mastery');
+    expect(text()).toContain('Ready for a fresh start');
+  });
+
+  it('shows explicit empty mode copy and keeps recalibration in Settings', async () => {
+    const stats = statsData();
+    stats.days[29] = {
+      ...stats.days[29]!,
+      recallAttempts: 0,
+      recallCorrect: 0,
+    };
+    stats.days[28] = {
+      ...stats.days[28]!,
+      recallAttempts: 0,
+      recallCorrect: 0,
+    };
+    sendMessage.mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        data: statusData({
+          calibrationCompleted: true,
+          stats,
+          summary: {
+            tracked: 1,
+            attempts: 3,
+            correct: 2,
+            due: 0,
+            byPhase: { crescent: 1, half: 0, full: 0 },
+            overallPhase: 'crescent',
+          },
+          vocabulary: [{ ...trackedVocabulary, due: { kind: 'none' } }],
+        }),
+      }),
+    );
+
+    await mount();
+    await click('Stats');
+    expect(text()).toContain('No recall answers yet');
+    expect(text()).not.toContain('Recalibrate DELF lens');
+
+    await click('Settings');
+    expect(text()).toContain('Reading lens');
+    expect(button('Recalibrate')).toBeDefined();
+  });
+
+  it('gives an empty Stats panel a one-click path back to Session', async () => {
+    sendMessage.mockImplementation(() =>
+      Promise.resolve({ ok: true, data: statusData({ calibrationCompleted: true }) }),
+    );
+
+    await mount();
+    await click('Stats');
+    expect(text()).toContain('Your first word is waiting.');
+    await click('Read another article');
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+      'Session',
+    );
+  });
+
+  it('sends an all-mastered learner back to Session instead of an empty practice queue', async () => {
+    sendMessage.mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        data: statusData({
+          calibrationCompleted: true,
+          phase: 'full',
+          summary: {
+            tracked: 1,
+            attempts: 4,
+            correct: 4,
+            due: 0,
+            byPhase: { crescent: 0, half: 0, full: 1 },
+            overallPhase: 'full',
+          },
+          vocabulary: [{ ...trackedVocabulary, phase: 'full', due: { kind: 'none' } }],
+        }),
+      }),
+    );
+
+    await mount();
+    await click('Stats');
+    await click('Read another article');
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+      'Session',
+    );
   });
 });
 

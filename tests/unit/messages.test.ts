@@ -141,8 +141,8 @@ describe('describeRejectedMessage', () => {
 });
 
 describe('MESSAGE_CONTRACT_VERSION', () => {
-  it('is a positive integer both halves of the extension can compare', () => {
+  it('is v6 for the GET_STATUS daily streak snapshot', () => {
     expect(Number.isInteger(MESSAGE_CONTRACT_VERSION)).toBe(true);
-    expect(MESSAGE_CONTRACT_VERSION).toBeGreaterThan(0);
+    expect(MESSAGE_CONTRACT_VERSION).toBe(6);
   });
 });

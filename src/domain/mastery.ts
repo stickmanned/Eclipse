@@ -23,6 +23,7 @@ import {
 } from './profile';
 import { applyAnswer, phaseFor } from './scoring';
 import { scheduleAnswer } from './scheduling';
+import { recordActivity, recordStreak } from './stats';
 import type { ConceptId } from './trap';
 
 export interface RecordAnswerInput {
@@ -165,6 +166,8 @@ export function recordAnswer(input: RecordAnswerInput): RecordAnswerResult {
     globalAbility: update.globalAbility,
     mastery: pruneMastery({ ...profile.mastery, [conceptId]: mastery }),
     recentOutcomes: [...profile.recentOutcomes, outcome].slice(-RECENT_OUTCOMES_LIMIT),
+    activity: recordActivity(profile.activity, event, now),
+    streak: recordStreak(profile.streak, event),
   };
 
   return {

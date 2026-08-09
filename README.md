@@ -6,6 +6,11 @@ A Chrome extension for English speakers learning French. On first run, take an e
 
 Get one wrong and it comes back — on the next page where it legitimately fits.
 
+The popup's private momentum dashboard shows seven- or thirty-day answer activity, separates
+context recognition from typed recall, interprets the learner's trends, and keeps a daily streak
+when at least one highlighted word is answered correctly. These aggregates and the uncapped streak
+stay inside the learner profile on this device.
+
 ---
 
 ## The eclipse is the interaction, not the branding
@@ -95,7 +100,7 @@ Three ownership rules do most of the work:
 
 - **The background worker** owns tab validation, the single active session, runtime injection, the AI request, and the serialized learner-history writer.
 - **The content script** owns the article DOM and sends contextual answer outcomes to that writer.
-- **The popup** owns presentation and active-recall practice. Practice answers and the DELF diagnostic also go through the worker, so there is still exactly one durable write seam.
+- **The popup** owns presentation and active-recall practice. It receives a bounded thirty-day activity aggregate, never raw review history. Practice answers and the DELF diagnostic also go through the worker, so there is still exactly one durable write seam.
 
 ### Narrow host permissions
 

@@ -29,6 +29,7 @@ import {
 } from '../domain/messages';
 import { classifyUrl } from '../domain/url-support';
 import { summarizeMastery, vocabularyItems } from '../domain/profile';
+import { createActivityHistory, summarizeActivity } from '../domain/stats';
 import { abilityForDelfLevel, type DelfLevel } from '../domain/delf';
 import { chromeArea } from '../storage/area';
 import { loadProfile, persistAnswer, resetProfile, saveProfile } from '../storage/profile-store';
@@ -263,7 +264,7 @@ export default defineBackground(() => {
     const providerSettings = await readProviderSettings(local);
     const now = new Date();
 
-    const loaded = await loadProfile(local);
+    const loaded = await loadProfile(local, now);
     if (!loaded.ok) {
       return success({
         contractVersion: MESSAGE_CONTRACT_VERSION,
@@ -283,6 +284,7 @@ export default defineBackground(() => {
           byPhase: { crescent: 0, half: 0, full: 0 },
           overallPhase: 'new_moon',
         },
+        stats: summarizeActivity(createActivityHistory(now), now),
         vocabulary: [],
         provider: {
           configured: PROVIDER_CONFIGURED,
@@ -308,6 +310,7 @@ export default defineBackground(() => {
       globalAbility: profile.globalAbility,
       phase: summary.overallPhase,
       summary,
+      stats: summarizeActivity(profile.activity, now, profile.streak),
       vocabulary: vocabularyItems(profile, now),
       provider: {
         configured: PROVIDER_CONFIGURED,

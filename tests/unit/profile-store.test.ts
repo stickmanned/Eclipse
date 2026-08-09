@@ -4,6 +4,7 @@ import {
   INTERACTION_LOG_LIMIT,
   hasInteraction,
   loadProfile,
+  persistAnswer,
   rememberInteraction,
   resetProfile,
   saveProfile,
@@ -140,9 +141,139 @@ describe('loading', () => {
       at: new Date(NOW.getTime() + 86_400_000).toISOString(),
     });
     expect(migrated?.display?.targetSurface).toBe('attendre');
+    expect(result.data.profile.activity).toEqual({
+      completeSince: expect.any(String),
+      days: [],
+    });
+    expect(result.data.profile.streak).toEqual({ count: 0 });
     expect((await area.get(PROFILE_KEY)) as LearnerProfile).toMatchObject({
       schemaVersion: PROFILE_SCHEMA_VERSION,
     });
+  });
+
+  it('migrates v2 review evidence into bounded local activity once', async () => {
+    const migrationTime = new Date('2026-03-02T12:00:00.000Z');
+    const current = createEmptyProfile(NOW);
+    const { activity: _activity, streak: _streak, ...withoutActivity } = current;
+    const v2 = {
+      ...withoutActivity,
+      schemaVersion: 2,
+      mastery: {
+        'fr:attendre:wait': masteryRecord({
+          reviewEvents: [
+            {
+              interactionId: 'ctx_1',
+              reviewedAt: NOW.toISOString(),
+              correct: true,
+              assisted: true,
+              mode: 'context-choice',
+              scheduled: false,
+              schedulerRating: 'good',
+            },
+            {
+              interactionId: 'recall_1',
+              reviewedAt: NOW.toISOString(),
+              correct: false,
+              assisted: false,
+              mode: 'typed-meaning',
+              scheduled: true,
+              schedulerRating: 'again',
+            },
+          ],
+        }),
+      },
+    };
+    const area = memoryArea({ [PROFILE_KEY]: v2 });
+
+    const migrated = await loadProfile(area, migrationTime);
+    expect(migrated.ok).toBe(true);
+    if (!migrated.ok) return;
+    expect(migrated.data.migrated).toBe(true);
+    expect(migrated.data.profile.activity.completeSince).toBe(migrationTime.toISOString());
+    expect(migrated.data.profile.activity.days).toEqual([
+      expect.objectContaining({
+        contextAttempts: 1,
+        contextCorrect: 1,
+        recallAttempts: 1,
+        recallCorrect: 0,
+      }),
+    ]);
+    expect(migrated.data.profile.streak).toEqual({
+      count: 1,
+      lastExtendedDate: '2026-03-01',
+    });
+
+    const reloaded = await loadProfile(area, new Date('2026-03-03T12:00:00.000Z'));
+    expect(reloaded.ok).toBe(true);
+    if (reloaded.ok) {
+      expect(reloaded.data.migrated).toBe(false);
+      expect(reloaded.data.profile.activity).toEqual(migrated.data.profile.activity);
+    }
+  });
+
+  it('migrates v3 activity into an uncapped durable streak once', async () => {
+    const current = createEmptyProfile(NOW);
+    const { streak: _streak, ...withoutStreak } = current;
+    const v3 = {
+      ...withoutStreak,
+      schemaVersion: 3,
+      activity: {
+        completeSince: '2026-02-01T12:00:00.000Z',
+        days: [
+          {
+            date: '2026-02-28',
+            contextAttempts: 1,
+            contextCorrect: 1,
+            recallAttempts: 0,
+            recallCorrect: 0,
+          },
+          {
+            date: '2026-03-01',
+            contextAttempts: 2,
+            contextCorrect: 1,
+            recallAttempts: 1,
+            recallCorrect: 1,
+          },
+        ],
+      },
+    };
+    const area = memoryArea({ [PROFILE_KEY]: v3 });
+
+    const migrated = await loadProfile(area, new Date('2026-03-02T12:00:00.000Z'));
+    expect(migrated.ok).toBe(true);
+    if (!migrated.ok) return;
+    expect(migrated.data.migrated).toBe(true);
+    expect(migrated.data.profile.streak).toEqual({
+      count: 2,
+      lastExtendedDate: '2026-03-01',
+    });
+
+    const reloaded = await loadProfile(area, new Date('2026-03-02T13:00:00.000Z'));
+    expect(reloaded.ok).toBe(true);
+    if (reloaded.ok) {
+      expect(reloaded.data.migrated).toBe(false);
+      expect(reloaded.data.profile.streak).toEqual(migrated.data.profile.streak);
+    }
+  });
+
+  it('leaves malformed v2 bytes untouched', async () => {
+    const stored = { schemaVersion: 2, sourceLocale: 'en', mastery: 'not-a-map' };
+    const area = memoryArea({ [PROFILE_KEY]: stored });
+
+    const result = await loadProfile(area, NOW);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('PROFILE_INCOMPATIBLE');
+    expect(await area.get(PROFILE_KEY)).toEqual(stored);
+  });
+
+  it('leaves malformed v3 bytes untouched', async () => {
+    const stored = { schemaVersion: 3, sourceLocale: 'en', activity: 'not-history' };
+    const area = memoryArea({ [PROFILE_KEY]: stored });
+
+    const result = await loadProfile(area, NOW);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('PROFILE_INCOMPATIBLE');
+    expect(await area.get(PROFILE_KEY)).toEqual(stored);
   });
 
   it('seeds a legacy Full label with the matching three-practice count', async () => {
@@ -298,6 +429,43 @@ describe('interaction log', () => {
   });
 });
 
+describe('serialized answer persistence', () => {
+  it('does not double-count activity when a durable interaction id is replayed', async () => {
+    const area = memoryArea();
+    const input = {
+      interactionId: 'durable_activity_1',
+      conceptId: 'fr:attendre:wait' as const,
+      difficulty: 0.35,
+      correct: true,
+      now: NOW,
+      assisted: true,
+      mode: 'context-choice' as const,
+      display: {
+        targetSurface: 'attendre',
+        englishMeaning: 'wait',
+        kind: 'word' as const,
+      },
+    };
+
+    const first = await persistAnswer(area, input);
+    const replay = await persistAnswer(area, input);
+    expect(first.ok && first.data.applied).toBe(true);
+    expect(replay.ok && replay.data.applied).toBe(false);
+
+    const loaded = await loadProfile(area, NOW);
+    expect(loaded.ok).toBe(true);
+    if (loaded.ok) {
+      expect(loaded.data.profile.activity.days).toEqual([
+        expect.objectContaining({ contextAttempts: 1, contextCorrect: 1 }),
+      ]);
+      expect(loaded.data.profile.streak).toEqual({
+        count: 1,
+        lastExtendedDate: '2026-03-01',
+      });
+    }
+  });
+});
+
 describe('mastery map bounds', () => {
   it('keeps at most 500 concepts, dropping the least recently updated', () => {
     const mastery: Record<string, ConceptMastery> = {};
@@ -331,6 +499,9 @@ describe('recordAnswer idempotency', () => {
     });
     expect(first.applied).toBe(true);
     expect(first.profile.mastery['fr:attendre:wait']?.attempts).toBe(1);
+    expect(first.profile.activity.days).toEqual([
+      expect.objectContaining({ contextAttempts: 1, contextCorrect: 0 }),
+    ]);
 
     const replay = recordAnswer({
       profile: first.profile,
@@ -343,6 +514,9 @@ describe('recordAnswer idempotency', () => {
     expect(replay.applied).toBe(false);
     expect(replay.profile).toBe(first.profile);
     expect(replay.profile.mastery['fr:attendre:wait']?.attempts).toBe(1);
+    expect(replay.profile.activity.days).toHaveLength(1);
+    expect(replay.profile.activity.days[0]?.contextAttempts).toBe(1);
+    expect(replay.profile.streak).toEqual({ count: 0 });
   });
 
   it('marks an incorrect answer due at the next occurrence', () => {
