@@ -74,7 +74,10 @@ describe('article detection order', () => {
 
 describe('article eligibility thresholds', () => {
   it(`needs at least ${MIN_ELIGIBLE_BLOCKS} blocks`, () => {
-    renderBody(`<article><p>${longProse()}</p><p>${longProse()}</p></article>`);
+    // Every text node here sits under an excluded <a> ancestor, so the block
+    // itself never survives collectEligibleBlocks — the boundary case for a
+    // floor of 1.
+    renderBody(`<article><p><a href="#">${longProse()}</a></p></article>`);
     const root = document.querySelector('article')!;
     expect(isArticleEligible(collectEligibleBlocks(root))).toBe(false);
   });

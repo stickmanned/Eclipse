@@ -209,7 +209,7 @@ describe('deactivation restores the page', () => {
 
 describe('typed failures', () => {
   it('reports NO_ARTICLE on a page without readable prose', async () => {
-    renderBody('<div><p>Too short to be an article.</p></div>');
+    renderBody('<div><p>Too short.</p></div>');
     const { session } = newSession();
     const result = await session.activate('ses_a');
     expect(result.ok).toBe(false);

@@ -120,6 +120,32 @@ function isTransientProviderFailure(cause: unknown): boolean {
   return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
 }
 
+/**
+ * Base backoff before the one retry. 429s need real headroom to clear a
+ * per-minute window, not just enough to dodge instant repetition — so this is
+ * scaled up for rate-limit responses specifically and jittered to keep
+ * concurrent batches from retrying in lockstep.
+ */
+const RETRY_BACKOFF_MS = 400;
+const RATE_LIMIT_BACKOFF_MS = 2000;
+
+function backoffFor(cause: unknown): number {
+  const status = (cause as { status?: unknown } | null)?.status;
+  const base = status === 429 ? RATE_LIMIT_BACKOFF_MS : RETRY_BACKOFF_MS;
+  return base + Math.random() * base * 0.5;
+}
+
+function delay(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener('abort', () => {
+      clearTimeout(timer);
+      resolve();
+    }, { once: true });
+  });
+}
+
 export function geminiProvider(options: GeminiProviderOptions): TrapProvider {
   const model = options.model ?? GEMINI_MODEL;
   const client = options.client ?? createNativeClient(options.apiKey);
@@ -160,7 +186,11 @@ export function geminiProvider(options: GeminiProviderOptions): TrapProvider {
             break;
           } catch (cause) {
             if (signal.aborted) return { kind: 'timeout' };
-            if (networkAttempt === 0 && isTransientProviderFailure(cause)) continue;
+            if (networkAttempt === 0 && isTransientProviderFailure(cause)) {
+              await delay(backoffFor(cause), signal);
+              if (signal.aborted) return { kind: 'timeout' };
+              continue;
+            }
             return { kind: 'unavailable', detail: unavailableDetail(cause) };
           }
         }

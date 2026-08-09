@@ -124,25 +124,43 @@ export function collectGeneratedCandidates(
 ): PlacementCandidate[] {
   const bySentenceId = new Map(targets.map((target) => [target.sentenceId, target]));
   const placements: PlacementCandidate[] = [];
+  // eslint-disable-next-line no-console -- temporary diagnostic, removed after debugging.
+  const dropped = { noTarget: 0, invalidTrap: 0, sentenceMismatch: 0, sourceMatch: 0, range: 0 };
 
   for (const candidate of candidates) {
     const target = bySentenceId.get(candidate.sentenceId);
-    if (!target) continue;
+    if (!target) {
+      dropped.noTarget += 1;
+      continue;
+    }
 
     const validated = validateTrap(candidate.trap, { untrusted: true });
-    if (!validated.ok || validated.data.provider !== 'gemini') continue;
+    if (!validated.ok || validated.data.provider !== 'gemini') {
+      dropped.invalidTrap += 1;
+      continue;
+    }
     if (collapseWhitespace(validated.data.sentence) !== collapseWhitespace(target.sentence.text)) {
+      dropped.sentenceMismatch += 1;
       continue;
     }
 
     const matches = findWordMatches(target.sentence.text, validated.data.exactSourceText);
-    if (matches.length !== 1) continue;
+    if (matches.length !== 1) {
+      dropped.sourceMatch += 1;
+      continue;
+    }
     const match = matches[0];
-    if (!match) continue;
+    if (!match) {
+      dropped.sourceMatch += 1;
+      continue;
+    }
 
     const blockStart = target.sentence.start + match.start;
     const blockEnd = target.sentence.start + match.end;
-    if (!resolveRange(target.block, blockStart, blockEnd)) continue;
+    if (!resolveRange(target.block, blockStart, blockEnd)) {
+      dropped.range += 1;
+      continue;
+    }
 
     placements.push({
       block: target.block,
@@ -164,6 +182,13 @@ export function collectGeneratedCandidates(
       },
     });
   }
+
+  // eslint-disable-next-line no-console -- temporary diagnostic, removed after debugging.
+  console.warn('[eclipse-debug] collectGeneratedCandidates ->', {
+    received: candidates.length,
+    placed: placements.length,
+    dropped,
+  });
 
   return placements;
 }

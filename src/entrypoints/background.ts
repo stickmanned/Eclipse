@@ -57,6 +57,28 @@ const CONTENT_SCRIPT_FILE = '/content-scripts/eclipse.js' as const;
  */
 const PROVIDER_CONFIGURED = PROVIDER_ORIGIN.length > 0;
 
+const HOST_PATTERN_RE =
+  /^(\*|[a-z][a-z0-9+.-]*):\/\/(\*|(?:\*\.)?[^/:]+)(?::(\*|\d+))?\/.*$/i;
+
+/**
+ * Whether a required host-permission pattern grants access to everything a
+ * narrower target pattern would. A required pattern with no port (e.g.
+ * `http://localhost/*`) matches every port for that host, which is exactly
+ * what WXT's dev server injects — so it silently covers the provider's
+ * `http://localhost:8787/*` even though the strings never match exactly.
+ */
+function hostPatternCovers(requiredPattern: string, targetPattern: string): boolean {
+  const required = HOST_PATTERN_RE.exec(requiredPattern);
+  const target = HOST_PATTERN_RE.exec(targetPattern);
+  if (!required || !target) return false;
+  const [, requiredScheme, requiredHost, requiredPort] = required;
+  const [, targetScheme, targetHost, targetPort] = target;
+  if (requiredScheme !== '*' && requiredScheme !== targetScheme) return false;
+  if (requiredHost !== '*' && requiredHost !== targetHost) return false;
+  if (requiredPort == null || requiredPort === '*') return true;
+  return requiredPort === targetPort;
+}
+
 export default defineBackground(() => {
   const local = chromeArea(browser.storage.local);
   const session = chromeArea(browser.storage.session);
@@ -394,9 +416,13 @@ export default defineBackground(() => {
   async function revokeProviderPermission(): Promise<boolean> {
     if (!PROVIDER_CONFIGURED) return true;
     try {
-      // The automated E2E manifest grants the loopback origin as a required,
-      // non-removable test permission. The production manifest never does.
-      if (browser.runtime.getManifest().host_permissions?.includes(PROVIDER_PERMISSION_PATTERN)) {
+      // The origin can be covered by a required host permission instead of the
+      // optional one we manage: the E2E manifest grants it outright, and WXT's
+      // dev server injects its own `http://<host>/*` (no port, matches every
+      // port) so the popup can reach the Vite dev server. Either way it's not
+      // ours to revoke, and `permissions.remove` would just fail.
+      const required: string[] = browser.runtime.getManifest().host_permissions ?? [];
+      if (required.some((pattern: string) => hostPatternCovers(pattern, PROVIDER_PERMISSION_PATTERN))) {
         return true;
       }
       if (!(await hasProviderPermission())) return true;

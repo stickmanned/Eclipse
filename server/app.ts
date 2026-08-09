@@ -137,11 +137,11 @@ export function createApp(options: AppOptions): Express {
         fail(response, 504, 'PROVIDER_TIMEOUT', 'The generation provider timed out.');
         return;
       case 'unavailable':
-        log('event=provider_unavailable');
+        log(`event=provider_unavailable detail=${outcome.detail}`);
         fail(response, 503, 'PROVIDER_UNAVAILABLE', 'The generation provider is unavailable.');
         return;
       case 'invalid':
-        log('event=provider_invalid_output');
+        log(`event=provider_invalid_output detail=${outcome.detail}`);
         fail(response, 502, 'PROVIDER_INVALID_RESPONSE', 'The provider returned invalid output.');
         return;
       case 'ok':

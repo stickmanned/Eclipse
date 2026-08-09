@@ -65,7 +65,12 @@ export interface ProviderSentence {
 /** Mirrors the provider client's limits so the two cannot drift apart. */
 const MAX_PROVIDER_SENTENCES = 8;
 const MAX_PROVIDER_SENTENCE_LENGTH = 300;
-const MAX_CONCURRENT_PROVIDER_REQUESTS = 2;
+/**
+ * Batches to the provider run one at a time. Gemini's rate limit is per-key,
+ * not per-batch, so firing batches concurrently only raced them into the same
+ * per-minute window and multiplied 429s instead of finishing faster.
+ */
+const MAX_CONCURRENT_PROVIDER_REQUESTS = 1;
 
 export interface OverlayCallbacks {
   onAnswer(trapId: string, choice: string): void;
@@ -184,9 +189,23 @@ export class ContentSession {
     this.pendingActivation = { sessionId, token: activationToken };
 
     const root = findArticleRoot(this.doc);
+    // eslint-disable-next-line no-console -- temporary diagnostic, removed after debugging.
+    console.warn('[eclipse-debug] findArticleRoot ->', root, {
+      tag: root?.tagName,
+      id: (root as Element | null)?.id,
+    });
     if (!root) return this.activationFailure(activationToken, 'NO_ARTICLE');
 
     const blocks = collectEligibleBlocks(root);
+    const totalChars = blocks.reduce(
+      (sum, block) => sum + block.text.replace(/\s+/g, ' ').trim().length,
+      0,
+    );
+    // eslint-disable-next-line no-console -- temporary diagnostic, removed after debugging.
+    console.warn('[eclipse-debug] collectEligibleBlocks ->', {
+      blockCount: blocks.length,
+      totalChars,
+    });
     if (!isArticleEligible(blocks)) return this.activationFailure(activationToken, 'NO_ARTICLE');
 
     const loaded = await loadProfile(this.host.storage);

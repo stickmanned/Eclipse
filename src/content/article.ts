@@ -43,8 +43,8 @@ export const EXCLUDED_ANCESTOR_SELECTOR = [
   '[data-eclipse-owner]',
 ].join(',');
 
-export const MIN_READABLE_CHARACTERS = 500;
-export const MIN_ELIGIBLE_BLOCKS = 3;
+export const MIN_READABLE_CHARACTERS = 20;
+export const MIN_ELIGIBLE_BLOCKS = 1;
 export const MAX_TEXT_NODES = 5_000;
 export const MAX_SCANNED_CHARACTERS = 100_000;
 

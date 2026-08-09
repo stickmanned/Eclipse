@@ -19,8 +19,14 @@ export const PROVIDER_HEALTH_ENDPOINT = `${PROVIDER_ORIGIN}/health`;
 export const PROVIDER_PERMISSION_PATTERN = 'http://localhost:8787/*';
 export const PROVIDER_MODEL = 'gemini-3.5-flash-lite';
 
-/** Client-side ceiling on how long activation will wait for generated traps. */
-export const PROVIDER_TIMEOUT_MS = 4000;
+/**
+ * Client-side ceiling on how long activation will wait for generated traps.
+ * Must exceed the server's own budget (DEFAULT_SERVER_TIMEOUT_MS in
+ * server/app.ts) so the client is never the one that gives up first — a race
+ * that used to abort in-flight requests the server would otherwise have
+ * finished, which is wasted work, not saved time.
+ */
+export const PROVIDER_TIMEOUT_MS = 9000;
 
 /** Maximum sentences sent in one request. */
 export const PROVIDER_MAX_SENTENCES = 8;
