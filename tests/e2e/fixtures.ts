@@ -70,7 +70,15 @@ export interface ProviderServer {
   setMode(mode: ProviderServerMode): void;
 }
 
-export type ProviderServerMode = 'ok' | 'zero' | 'invalid' | 'timeout';
+export type ProviderServerMode =
+  | 'ok'
+  | 'zero'
+  | 'invalid'
+  | 'timeout'
+  | 'rate-limited-once'
+  | 'unavailable-once'
+  | 'invalid-once'
+  | 'timeout-once';
 
 /** Fixtures rebuilt for every test. */
 export interface EclipseFixtures {
@@ -143,6 +151,8 @@ export const test = base.extend<EclipseFixtures, EclipseWorkerFixtures>({
     async ({ extensionId }, use) => {
       let requests = 0;
       let mode: ProviderServerMode = 'ok';
+      let modeAttempts = 0;
+      let rateLimitAttempts = 0;
       const provider: TrapProvider = {
         name: 'gemini',
         model: 'gemini-3.5-flash-lite',
@@ -151,9 +161,15 @@ export const test = base.extend<EclipseFixtures, EclipseWorkerFixtures>({
           signal: AbortSignal,
         ): Promise<ProviderOutcome> {
           requests += 1;
+          modeAttempts += 1;
           if (mode === 'zero') return { kind: 'ok', output: { traps: [] } };
-          if (mode === 'invalid') return { kind: 'invalid', detail: 'fake invalid output' };
-          if (mode === 'timeout') {
+          if (mode === 'unavailable-once' && modeAttempts === 1) {
+            return { kind: 'unavailable', detail: 'fake transient outage' };
+          }
+          if (mode === 'invalid' || (mode === 'invalid-once' && modeAttempts === 1)) {
+            return { kind: 'invalid', detail: 'fake invalid output' };
+          }
+          if (mode === 'timeout' || (mode === 'timeout-once' && modeAttempts === 1)) {
             await new Promise<void>((resolve) => {
               if (signal.aborted) resolve();
               else signal.addEventListener('abort', () => resolve(), { once: true });
@@ -168,23 +184,47 @@ export const test = base.extend<EclipseFixtures, EclipseWorkerFixtures>({
         allowedOrigins: [`chrome-extension://${extensionId}`],
         log: () => undefined,
         timeoutMs: 150,
+        rateLimiter: {
+          take() {
+            if (mode !== 'rate-limited-once') return true;
+            rateLimitAttempts += 1;
+            return rateLimitAttempts > 1;
+          },
+          reset() {
+            rateLimitAttempts = 0;
+          },
+        },
       });
+      // The fake provider must own the same port the extension is compiled to
+      // call. A real `npm run api` on that port turns into a cascade of
+      // unrelated-looking assertion failures, so name the collision here.
       const server = await new Promise<Server>((resolve, reject) => {
         const listening = app.listen(8787, '127.0.0.1', () => resolve(listening));
-        listening.on('error', reject);
+        listening.on('error', (cause: NodeJS.ErrnoException) => {
+          reject(
+            cause.code === 'EADDRINUSE'
+              ? new Error(
+                  'Port 8787 is already in use, so the fake generation API cannot start. ' +
+                    'Stop "npm run api" (or whatever holds the port) and run the E2E suite again.',
+                )
+              : cause,
+          );
+        });
       });
 
       await use({
         requestCount: () => requests,
         setMode(nextMode) {
           mode = nextMode;
+          modeAttempts = 0;
+          rateLimitAttempts = 0;
         },
       });
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
       });
     },
-    { scope: 'worker' },
+    { scope: 'worker', auto: true },
   ],
 
   /**
@@ -219,7 +259,7 @@ export const test = base.extend<EclipseFixtures, EclipseWorkerFixtures>({
 });
 
 function genericModelOutput(request: ContextTrapsRequest): ModelOutput {
-  const surfaces = [
+  const wordSurfaces = [
     'observer',
     'mesurer',
     'décrire',
@@ -229,37 +269,63 @@ function genericModelOutput(request: ContextTrapsRequest): ModelOutput {
     'suivre',
     'tester',
   ];
+  const phraseSurfaces = [
+    'tout au long de',
+    'à proximité de',
+    'mettre en évidence',
+    'tenir compte de',
+  ];
+  const difficulty = { A1: 0.2, A2: 0.4, B1: 0.6, B2: 0.82 }[request.delfLevel];
   return {
     traps: request.sentences.flatMap((sentence, index) => {
       const words = Array.from(sentence.text.matchAll(/[A-Za-z]+/g));
-      const source = words.find(
+      const wordSource = words.find(
         (word) =>
           word[0].length >= 5 &&
           words.filter((candidate) => candidate[0].toLowerCase() === word[0].toLowerCase())
             .length === 1,
       );
+      const pairStart = words.findIndex((word, wordIndex) => {
+        const next = words[wordIndex + 1];
+        return word[0].length >= 4 && Boolean(next && next[0].length >= 4);
+      });
+      const firstPhraseWord = pairStart >= 0 ? words[pairStart] : undefined;
+      const lastPhraseWord = pairStart >= 0 ? words[pairStart + 1] : undefined;
+      const phraseSource =
+        firstPhraseWord?.index !== undefined && lastPhraseWord?.index !== undefined
+          ? sentence.text.slice(
+              firstPhraseWord.index,
+              lastPhraseWord.index + lastPhraseWord[0].length,
+            )
+          : null;
+      const usePhrase = index % 2 === 1 && phraseSource !== null;
+      const exactSourceText = usePhrase ? phraseSource : wordSource?.[0];
       const clue = words.find(
         (word) =>
-          word !== source &&
+          !exactSourceText?.includes(word[0]) &&
           word[0].length >= 4 &&
-          word[0].toLowerCase() !== source?.[0].toLowerCase(),
+          word[0].toLowerCase() !== wordSource?.[0].toLowerCase(),
       );
-      if (!source || !clue) return [];
+      if (!exactSourceText || !clue) return [];
 
       return [
         {
           sentenceId: sentence.id,
-          conceptSlug: `generated-${index}`,
-          englishSense: `context-${index}`,
-          type: 'polysemy' as const,
-          exactSourceText: source[0],
-          targetSurface: surfaces[index % surfaces.length] ?? 'observer',
-          choices: ['the contextual meaning', 'a tempting distractor', 'another distractor'],
-          acceptedChoice: 'the contextual meaning',
+          conceptSlug: `generated-${sentence.id}`,
+          englishSense: `context-${sentence.id}`,
+          type: usePhrase ? ('phrase' as const) : ('vocabulary' as const),
+          exactSourceText,
+          targetSurface: usePhrase
+            ? (phraseSurfaces[index % phraseSurfaces.length] ?? 'tout au long de')
+            : (wordSurfaces[index % wordSurfaces.length] ?? 'observer'),
+          choices: usePhrase
+            ? ['the complete contextual phrase', 'only its first word', 'an unrelated expression']
+            : ['the contextual meaning', 'a tempting distractor', 'another distractor'],
+          acceptedChoice: usePhrase ? 'the complete contextual phrase' : 'the contextual meaning',
           clueSpan: clue[0],
           explanation: 'The French surface expresses the meaning selected by this context.',
           distractorExplanation: 'The alternative meaning does not fit the surrounding evidence.',
-          difficulty: 0.45,
+          difficulty,
           confidence: 0.95,
         },
       ];
@@ -327,13 +393,38 @@ export async function send<T>(driver: Page, message: Record<string, unknown>): P
   ) as Promise<Result<T>>;
 }
 
+/** Resolve a tab id by URL, from an extension page that can see tabs. */
+export async function tabIdFor(driver: Page, url: string): Promise<number> {
+  const id = await driver.evaluate(async (target) => {
+    const [tab] = await chrome.tabs.query({ url: target });
+    return tab?.id ?? null;
+  }, url);
+  if (id === null) throw new Error(`No tab found for ${url}`);
+  return id;
+}
+
+/** Send straight to a tab's content runtime, the way the worker does. */
+export async function sendToTab<T>(
+  driver: Page,
+  tabId: number,
+  message: Record<string, unknown>,
+): Promise<Result<T>> {
+  return driver.evaluate(
+    async ({ id, payload }) => (await chrome.tabs.sendMessage(id, payload)) as never,
+    { id: tabId, payload: message },
+  ) as Promise<Result<T>>;
+}
+
 /** Mark calibration complete without going through the popup UI. */
-export async function skipCalibration(driver: Page): Promise<void> {
+export async function skipCalibration(
+  driver: Page,
+  delfLevel: 'A1' | 'A2' | 'B1' | 'B2' = 'B1',
+): Promise<void> {
   await send(driver, {
     type: 'SAVE_CALIBRATION',
-    globalAbility: 0,
+    delfLevel,
     correctAnswers: 0,
-    skipped: true,
+    method: 'self_selected',
   });
 }
 
@@ -341,8 +432,9 @@ export async function skipCalibration(driver: Page): Promise<void> {
 export async function startEclipse(
   driver: Page,
   page: Page,
+  delfLevel: 'A1' | 'A2' | 'B1' | 'B2' = 'B1',
 ): Promise<Result<{ sessionId: string; tabId: number; trapCount: number }>> {
-  await skipCalibration(driver);
+  await skipCalibration(driver, delfLevel);
   await page.bringToFront();
   return send(driver, { type: 'START_SESSION' });
 }
@@ -361,11 +453,11 @@ export async function stopEclipse(driver: Page): Promise<Result<{ restored: bool
  * terminal state first.
  */
 export async function skipCalibrationInPopup(popup: Page): Promise<void> {
-  const skip = popup.getByRole('button', { name: /^Skip/ });
+  const chooseB1 = popup.getByRole('button', { name: /B1 Navigate/ });
   const ready = popup.getByRole('button', { name: /Start Eclipse|End Eclipse/ });
 
-  await expect(skip.or(ready).first()).toBeVisible();
-  if (await skip.isVisible()) await skip.click();
+  await expect(chooseB1.or(ready).first()).toBeVisible();
+  if (await chooseB1.isVisible()) await chooseB1.click();
   await expect(ready).toBeVisible();
 }
 

@@ -268,6 +268,51 @@ describe('placement rules', () => {
   });
 });
 
+describe('DELF reading lens', () => {
+  const levels = [
+    candidate({
+      trapId: 'a1',
+      conceptId: 'fr:facile:easy',
+      difficulty: 0.2,
+      blockKey: 'block:a1',
+      sentenceKey: 'block:a1#0',
+    }),
+    candidate({
+      trapId: 'a2',
+      conceptId: 'fr:frequent:common',
+      difficulty: 0.4,
+      blockKey: 'block:a2',
+      sentenceKey: 'block:a2#0',
+    }),
+    candidate({
+      trapId: 'b1',
+      conceptId: 'fr:nuance:nuance',
+      difficulty: 0.6,
+      blockKey: 'block:b1',
+      sentenceKey: 'block:b1#0',
+    }),
+    candidate({
+      trapId: 'b2',
+      conceptId: 'fr:abstrait:abstract',
+      difficulty: 0.9,
+      blockKey: 'block:b2',
+      sentenceKey: 'block:b2#0',
+    }),
+  ];
+
+  it('keeps A1 highlights concrete and excludes advanced items', () => {
+    const chosen = selectCandidates(levels, { ...context(), delfLevel: 'A1' }, LIMITS);
+    expect(chosen.map((item) => item.trapId)).toEqual(expect.arrayContaining(['a1', 'a2']));
+    expect(chosen.map((item) => item.trapId)).not.toContain('b2');
+  });
+
+  it('keeps B2 highlights advanced and excludes beginner items', () => {
+    const chosen = selectCandidates(levels, { ...context(), delfLevel: 'B2' }, LIMITS);
+    expect(chosen.map((item) => item.trapId)).toEqual(expect.arrayContaining(['b1', 'b2']));
+    expect(chosen.map((item) => item.trapId)).not.toContain('a1');
+  });
+});
+
 describe('due override', () => {
   it('promotes a due concept over a better-scoring fresh one', () => {
     const freshHighScore = candidate({

@@ -45,16 +45,17 @@ export function predictCorrect(
   return sigmoid(globalAbility + conceptScore - difficultyLogit(difficulty));
 }
 
-/** Number of calibration questions asked on first run. */
-export const CALIBRATION_QUESTION_COUNT = 3;
+/** Number of questions in the A1–B2 reading diagnostic. */
+export const CALIBRATION_QUESTION_COUNT = 8;
 
 /**
- * `clamp((correctAnswers - 1.5) / 1.5, -1, 1)` over the three calibration
- * questions. Skipping calibration yields 0 (see the caller).
+ * Spread a raw diagnostic score across the adaptive model's -1..1 range.
+ * Learner-facing DELF assignment uses the explicit bands in `calibration.ts`.
  */
 export function calibrationAbility(correctAnswers: number): number {
   const bounded = clamp(correctAnswers, 0, CALIBRATION_QUESTION_COUNT);
-  return clamp((bounded - 1.5) / 1.5, GLOBAL_ABILITY_MIN, GLOBAL_ABILITY_MAX);
+  const midpoint = CALIBRATION_QUESTION_COUNT / 2;
+  return clamp((bounded - midpoint) / midpoint, GLOBAL_ABILITY_MIN, GLOBAL_ABILITY_MAX);
 }
 
 export interface MasteryUpdateInput {

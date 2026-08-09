@@ -15,13 +15,14 @@
  */
 
 import { normalizedVisibleText } from '../domain/normalize';
-import type { ContextTrap } from '../domain/trap';
+import { learningItemKind, type ContextTrap } from '../domain/trap';
 
 export const OWNER_ATTRIBUTE = 'data-eclipse-owner';
 export const OWNER_VALUE = 'eclipse';
 export const SESSION_ATTRIBUTE = 'data-eclipse-session';
 export const TRAP_ATTRIBUTE = 'data-eclipse-trap';
 export const CONCEPT_ATTRIBUTE = 'data-eclipse-concept';
+export const ITEM_KIND_ATTRIBUTE = 'data-eclipse-kind';
 export const TOKEN_CLASS = 'eclipse-token';
 
 export interface OwnedToken {
@@ -171,10 +172,12 @@ export function createTokenButton(
   button.setAttribute(SESSION_ATTRIBUTE, sessionId);
   button.setAttribute(TRAP_ATTRIBUTE, trap.id);
   button.setAttribute(CONCEPT_ATTRIBUTE, trap.conceptId);
+  const kind = learningItemKind(trap);
+  button.setAttribute(ITEM_KIND_ATTRIBUTE, kind);
   button.setAttribute('lang', 'fr-FR');
   button.setAttribute(
     'aria-label',
-    `French context challenge: ${trap.targetSurface}. Activate to choose its meaning here.`,
+    `French ${kind}: ${trap.targetSurface}. Activate to answer a translation question.`,
   );
   // textContent, never innerHTML. The French surface is data, not markup.
   button.textContent = trap.targetSurface;

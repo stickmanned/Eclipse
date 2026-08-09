@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Wikipedia-shaped Eclipse fixture</title>
+    <style>
+      body {
+        margin: 0;
+        color: #202122;
+        font:
+          16px/1.65 Georgia,
+          serif;
+      }
+      main {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 32px;
+      }
+      a {
+        color: #36c;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="content" class="mw-body">
+      <h1>Harbor field research</h1>
+      <p id="citation-heavy-lead"></p>
+      <section id="article-body"></section>
+    </main>
+    <script>
+      const lead = document.getElementById('citation-heavy-lead');
+      for (let index = 0; index < 550; index += 1) {
+        const link = document.createElement('a');
+        link.href = `/wiki/linked-term-${index}`;
+        link.textContent = `linked term ${index}`;
+        const citation = document.createElement('sup');
+        citation.textContent = `[${index}]`;
+        lead.append(link, citation, document.createTextNode(' '));
+      }
+
+      const topics = [
+        'weather stations',
+        'harbor currents',
+        'coastal wildlife',
+        'fishing records',
+        'historic buildings',
+        'public transit',
+        'water quality',
+        'seasonal tourism',
+        'local businesses',
+        'emergency planning',
+        'shoreline plants',
+        'community archives',
+      ];
+      const body = document.getElementById('article-body');
+      topics.forEach((topic, index) => {
+        const paragraph = document.createElement('p');
+        paragraph.dataset.articleBody = String(index);
+        paragraph.textContent = `Researchers observed ${topic} throughout season ${index + 1} while nearby communities documented gradual changes for a detailed regional study. Engineers compared the ${topic} measurements with independent records before presenting practical recommendations to residents.`;
+        body.append(paragraph);
+      });
+    </script>
+  </body>
+</html>

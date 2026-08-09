@@ -1,5 +1,5 @@
 /**
- * Request and response contracts for the optional generation API.
+ * Request and response contracts for the loopback generation API.
  *
  * The server validates twice: the request on the way in, and the model's output
  * on the way back out. The second pass matters more — the model has just been
@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { validateTrap, type GeneratedTrapCandidate } from '../src/domain/trap';
 import { FRENCH_CATALOG } from '../src/catalog/french-catalog';
 import { containsFolded, foldForComparison } from '../src/domain/normalize';
+import { DELF_LEVELS } from '../src/domain/delf';
 
 /** Hard limits from the plan. Enforced here and again by the body-size guard. */
 export const MAX_SENTENCES = 8;
@@ -20,6 +21,7 @@ export const MAX_BODY_BYTES = 12 * 1024;
 export const requestSchema = z.object({
   sourceLocale: z.literal('en'),
   targetLocale: z.literal('fr-FR'),
+  delfLevel: z.enum(DELF_LEVELS),
   sentences: z
     .array(
       z.object({
@@ -75,7 +77,10 @@ export const MODEL_OUTPUT_SCHEMA = {
             type: 'string',
             description: 'Lowercase ASCII slug naming the English sense being taught.',
           },
-          type: { type: 'string', enum: ['polysemy', 'idiom', 'false_friend'] },
+          type: {
+            type: 'string',
+            enum: ['vocabulary', 'phrase', 'polysemy', 'idiom', 'false_friend'],
+          },
           exactSourceText: { type: 'string' },
           targetSurface: { type: 'string' },
           choices: {
@@ -96,11 +101,38 @@ export const MODEL_OUTPUT_SCHEMA = {
   },
 } as const;
 
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/**
+ * `conceptSlug` and `englishSense` are internal identifiers — they key mastery
+ * records and become a `data-eclipse-concept` attribute. They are never shown
+ * to a learner. The model routinely answers the documented "hyphen separated
+ * slug" with ordinary spacing ("pointed out"), so the spacing is conformed to
+ * the contract before validation rather than costing a whole batch.
+ *
+ * This is not the accent rule in reverse. A French surface is content, and
+ * repairing it would teach the wrong word; a slug carries no meaning a learner
+ * ever reads. Anything that does not reduce to a valid slug is still rejected.
+ */
+const slugField = z
+  .string()
+  .min(1)
+  .max(80)
+  .transform((value) =>
+    value
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, ''),
+  )
+  .refine((value) => SLUG_PATTERN.test(value));
+
 const modelTrapSchema = z.object({
   sentenceId: z.string().min(1).max(64),
-  conceptSlug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
-  englishSense: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
-  type: z.enum(['polysemy', 'idiom', 'false_friend']),
+  conceptSlug: slugField,
+  englishSense: slugField,
+  type: z.enum(['vocabulary', 'phrase', 'polysemy', 'idiom', 'false_friend']),
   exactSourceText: z.string().min(1).max(80),
   targetSurface: z.string().min(1).max(64),
   choices: z.array(z.string().min(1).max(80)).length(3),
@@ -117,6 +149,39 @@ export const modelOutputSchema = z.object({
 });
 
 export type ModelOutput = z.infer<typeof modelOutputSchema>;
+
+export interface ModelOutputParse {
+  readonly output: ModelOutput;
+  /** Items dropped because they did not match the schema. Count only. */
+  readonly droppedItems: number;
+}
+
+/**
+ * Validate model output item by item.
+ *
+ * Every item still faces exactly the same schema as before — nothing is
+ * accepted that `modelTrapSchema` would refuse. What changes is the blast
+ * radius: one malformed item used to fail `z.array(...)` and discard the whole
+ * batch, so a response with seven good learning items and one bad slug yielded
+ * nothing and cost a second model call. Now the bad item is dropped and the
+ * other seven survive.
+ *
+ * Returns null only when the envelope itself is unusable.
+ */
+export function parseModelOutput(value: unknown): ModelOutputParse | null {
+  const envelope = z.object({ traps: z.array(z.unknown()).max(MAX_SENTENCES) }).safeParse(value);
+  if (!envelope.success) return null;
+
+  const traps: ModelOutput['traps'] = [];
+  let droppedItems = 0;
+  for (const item of envelope.data.traps) {
+    const parsed = modelTrapSchema.safeParse(item);
+    if (parsed.success) traps.push(parsed.data);
+    else droppedItems += 1;
+  }
+
+  return { output: { traps }, droppedItems };
+}
 
 export interface ConversionResult {
   readonly candidates: GeneratedTrapCandidate[];

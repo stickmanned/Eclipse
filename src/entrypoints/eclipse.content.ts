@@ -18,7 +18,7 @@ import type { OverlayStore } from '../content/overlay-store';
 import { chromeArea } from '../storage/area';
 import { failure, success, type Result } from '../domain/errors';
 import type { GeneratedTrapCandidate } from '../domain/trap';
-import { parseMessage } from '../domain/messages';
+import { describeRejectedMessage, parseMessage } from '../domain/messages';
 
 const TOKEN_STYLE_ID = 'eclipse-token-styles';
 
@@ -88,13 +88,14 @@ export default defineContentScript({
 
       /**
        * The content script never talks to the network. It asks the background
-       * worker, which owns the optional permission and the fetch.
+       * worker, which owns the loopback permission and the fetch.
        */
-      async requestGeneratedTraps(sessionId, sentences) {
+      async requestGeneratedTraps(sessionId, delfLevel, sentences) {
         try {
           const response: unknown = await browser.runtime.sendMessage({
             type: 'GENERATE_TRAPS',
             sessionId,
+            delfLevel,
             sentences: [...sentences],
           });
           if (response && typeof response === 'object' && 'ok' in response) {
@@ -110,8 +111,11 @@ export default defineContentScript({
 
     browser.runtime.onMessage.addListener((raw, _sender, sendResponse) => {
       const message = parseMessage(raw);
+
+      // Same contract as the worker: answer everything, so a mismatched peer
+      // gets a reason instead of a silent `undefined`.
       if (!message) {
-        sendResponse(failure('UNKNOWN_ERROR', 'Unrecognised message.'));
+        sendResponse(failure('MESSAGE_UNSUPPORTED', describeRejectedMessage(raw)));
         return false;
       }
 
@@ -144,7 +148,7 @@ export default defineContentScript({
 
         default:
           sendResponse(
-            failure('UNKNOWN_ERROR', `The Eclipse runtime does not handle ${message.type}.`),
+            failure('MESSAGE_UNSUPPORTED', `The Eclipse runtime does not handle ${message.type}.`),
           );
           return false;
       }

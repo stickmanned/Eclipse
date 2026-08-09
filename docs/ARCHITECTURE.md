@@ -35,7 +35,7 @@ Three rules, and most of the concurrency problems in an extension of this shape 
 
 ### The background worker owns coordination
 
-Popup requests, tab validation, the single active session, runtime injection, session replacement across tabs, and the optional provider permission and network call.
+Popup requests, tab validation, the single active session, runtime injection, session replacement across tabs, and the always-on loopback provider network call.
 
 It holds session state in `chrome.storage.session`, so a service-worker restart does not lose track of which tab is running Eclipse, and closing the browser clears it.
 
@@ -47,22 +47,22 @@ Article analysis, trap selection, every DOM mutation, restoration, challenge int
 
 ### The popup owns presentation
 
-It reads status and sends intents. It never writes learner history. Calibration is the interesting case: it _produces_ a `globalAbility`, so it routes through `SAVE_CALIBRATION` rather than reaching into storage. That message is the one addition to the plan's eight, and it exists specifically to keep this boundary intact.
+It reads status and sends intents. It never writes learner history. DELF setup is the interesting case: the diagnostic or direct selection produces a level and starting `globalAbility`, so it routes through `SAVE_CALIBRATION` rather than reaching into storage. That message exists specifically to keep this boundary intact.
 
-## Why Eclipse needs no host permissions
+## Why Eclipse needs no article host permissions
 
 The shipped manifest is:
 
 ```json
 {
   "permissions": ["activeTab", "scripting", "storage"],
-  "optional_host_permissions": ["http://localhost:8787/*"]
+  "host_permissions": ["http://localhost:8787/*"]
 }
 ```
 
-No `host_permissions`. No `content_scripts`. No `web_accessible_resources`.
+One required loopback AI host, but no article hosts, `content_scripts`, or `web_accessible_resources`.
 
-Three things make that possible:
+Three things keep article access narrow:
 
 1. **The content script is declared `registration: "runtime"` with no `matches`.** WXT adds a runtime-registered script's `matches` to `host_permissions`; with no `matches` there is nothing to add. The bundle is still emitted at `content-scripts/eclipse.js`.
 2. **The worker injects it with `chrome.scripting.executeScript` on the user's click**, under the temporary `activeTab` grant.
@@ -112,7 +112,7 @@ Ties break by score, then document order, then trap id — so the same article a
 
 ### Placement rules
 
-2–4 per page · one per block · never two in a sentence · never overlapping ranges · never the same concept twice · never more than 3% of eligible words.
+up to 120 per page · up to two per block · never two in a sentence · never overlapping ranges · never the same concept twice · never more than 8% of eligible words.
 
 ## Mastery and scheduling
 
@@ -134,7 +134,7 @@ The review ladder is 1 day → 3 days → 7 days. The current rung is **derived,
 | `eclipse:profile:v1`           | `local`   | The learner profile                                        |
 | `eclipse:interactions:v1`      | `local`   | Last 200 interaction ids, for idempotency                  |
 | `eclipse:provider-cache:v1`    | `local`   | Up to 100 sentence-free templates, keyed by scoped SHA-256 |
-| `eclipse:provider-settings:v1` | `local`   | The optional-provider toggle                               |
+| `eclipse:provider-settings:v1` | `local`   | AI readiness and the most recent service error             |
 | `eclipse:session:v1`           | `session` | The single active session                                  |
 
 Two policies worth calling out:
@@ -144,9 +144,13 @@ Two policies worth calling out:
 
 ## Failure vocabulary
 
-Every boundary returns `{ok: true, data}` or `{ok: false, error: {code, message, recoverable}}`. Nothing throws across a message boundary.
+Every boundary returns `{ok: true, data}` or `{ok: false, error: {code, message, recoverable}}`. Nothing throws across a message boundary, and no listener ever drops a message: an unparseable or unhandled request is answered with `MESSAGE_UNSUPPORTED` rather than left to resolve as `undefined`.
 
-`UNSUPPORTED_URL` · `NO_ARTICLE` · `NO_ELIGIBLE_TRAPS` · `CONTENT_SCRIPT_UNAVAILABLE` · `SESSION_REPLACED` · `DOM_INVALIDATED` · `STORAGE_ERROR` · `PROFILE_INCOMPATIBLE` · `PROVIDER_DISABLED` · `PROVIDER_PERMISSION_DENIED` · `PROVIDER_UNAVAILABLE` · `PROVIDER_TIMEOUT` · `PROVIDER_INVALID_RESPONSE` · `UNKNOWN_ERROR`
+`UNSUPPORTED_URL` · `NO_ARTICLE` · `NO_ELIGIBLE_TRAPS` · `CONTENT_SCRIPT_UNAVAILABLE` · `SESSION_REPLACED` · `DOM_INVALIDATED` · `STORAGE_ERROR` · `PROFILE_INCOMPATIBLE` · `PROVIDER_DISABLED` · `PROVIDER_PERMISSION_DENIED` · `PROVIDER_UNAVAILABLE` · `PROVIDER_TIMEOUT` · `PROVIDER_INVALID_RESPONSE` · `MESSAGE_UNSUPPORTED` · `UNKNOWN_ERROR`
+
+### Version skew between the popup and the worker
+
+Chrome can keep a previously registered service worker alive across a rebuild, so a popup compiled from new source may talk to a worker compiled from old source. `MESSAGE_CONTRACT_VERSION` in `src/domain/messages.ts` is compiled into both halves and reported by `GET_STATUS`; when the popup sees a value other than its own — or no value at all, which is what a pre-v2 worker returns — it shows a Reload Eclipse notice instead of failing later on the first message whose payload moved. Bump the constant whenever a payload changes shape in a way an older peer cannot parse.
 
 ## Text handling
 
@@ -159,11 +163,23 @@ Matching never rewrites the haystack. Offsets from `findWordMatches` map straigh
 
 ## Trust boundaries
 
-| Source          | Trust         | Treatment                                                                                                          |
-| --------------- | ------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Bundled catalog | Curated       | Still validated, so a bad edit fails in CI rather than shipping                                                    |
-| Page text       | **Untrusted** | Read-only input to matching. Never evaluated, never sent anywhere except the optional provider's sentence list     |
-| Provider output | **Untrusted** | Validated against the same rules as the catalog, plus instruction-shaped-text detection and a 0.8 confidence floor |
-| Messages        | Untrusted     | Parsed with a Zod discriminated union; unknown shapes rejected, never coerced                                      |
+| Source          | Trust         | Treatment                                                                                                                       |
+| --------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Bundled catalog | Curated       | Still validated, so a bad edit fails in CI rather than shipping                                                                 |
+| Page text       | **Untrusted** | Read-only input to matching. Never evaluated; eligible sentence batches go only to the loopback provider                        |
+| Provider output | **Untrusted** | Validated item by item against the same rules as the catalog, plus instruction-shaped-text detection and a 0.8 confidence floor |
+| Messages        | Untrusted     | Parsed with a Zod discriminated union; unknown shapes rejected, never coerced                                                   |
 
 All rendering goes through React text nodes or `textContent`. There is no `innerHTML` and no `dangerouslySetInnerHTML` anywhere in the codebase.
+
+Validating provider output **item by item** is a cost decision, not a trust decision: every item still faces exactly the schema it always did. What changed is the blast radius. One item with a spaced slug used to fail `z.array(...)`, discard the seven good learning items beside it, and buy a second model call that often came back worse — measured live, a batch spent 8.3s to return nothing that a 4.4s call had already produced correctly.
+
+## Generation cost
+
+One "Start Eclipse" on a long article fans out to up to fifteen batches of eight sentences. Three properties keep that from being a long wait, all of them measured against the real provider rather than reasoned about:
+
+- **A second model call has to earn itself.** The repair attempt fires only when the first response covers less than `repairThreshold` of its sentences. Demanding full coverage fired it on roughly five batches in six and did not improve the result.
+- **A bad repair can never cost a good first attempt.** Every failure path inside the attempt loop continues rather than returning, and the batch ships whichever attempt produced the most usable items.
+- **Cache lookups are per batch, not per sentence.** `getCachedTrapsBatch` / `setCachedTrapsBatch` take the shared cache lock once. The per-sentence entry points remain for single lookups; calling them in a loop re-serializes batches that are supposed to run concurrently.
+
+Concurrency is capped at three in-flight batches. The binding constraint is the upstream per-minute quota, not instantaneous concurrency: a single wave of six succeeds, but ten batches sustained at four in flight exhausts the quota, the automatic retry hits the same wall, and the article loses nearly half its learning items to buy six seconds.

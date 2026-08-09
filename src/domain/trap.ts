@@ -1,11 +1,10 @@
 /**
- * The context-trap contract.
+ * The article learning-item contract.
  *
- * A trap is one replacement: a specific English span inside a specific sentence
- * becomes a French surface form, and answering it reveals the evidence that
- * settles the meaning. Traps arrive from the bundled catalog or, optionally,
- * from the local generation API. Both go through {@link validateTrap} before
- * anything is rendered.
+ * One useful English word or phrase inside a specific sentence becomes a
+ * French surface form. Selecting it opens a comprehension question and then
+ * reveals the translation and contextual evidence. The historic `trap` name
+ * remains internal so stored mastery ids and the safety boundary stay stable.
  */
 
 import { z } from 'zod';
@@ -20,8 +19,10 @@ import {
 import { checkFieldSafety, type SafetyIssue } from './safety';
 import { failure, success, type Result } from './errors';
 
-export const TRAP_TYPES = ['polysemy', 'idiom', 'false_friend'] as const;
+export const TRAP_TYPES = ['vocabulary', 'phrase', 'polysemy', 'idiom', 'false_friend'] as const;
 export type TrapType = (typeof TRAP_TYPES)[number];
+
+export type LearningItemKind = 'word' | 'phrase';
 
 export const TRAP_PROVIDERS = ['catalog', 'gemini'] as const;
 export type TrapProvider = (typeof TRAP_PROVIDERS)[number];
@@ -230,4 +231,10 @@ export function primaryDistractor(trap: ContextTrap): string {
 /** True when the learner's selection is the accepted meaning. */
 export function isCorrectChoice(trap: ContextTrap, selected: string): boolean {
   return selected === trap.acceptedChoice;
+}
+
+export function learningItemKind(trap: ContextTrap): LearningItemKind {
+  return trap.type === 'phrase' || trap.type === 'idiom' || /\s/u.test(trap.exactSourceText.trim())
+    ? 'phrase'
+    : 'word';
 }

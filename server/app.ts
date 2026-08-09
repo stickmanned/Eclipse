@@ -1,9 +1,8 @@
 /**
- * The optional generation API.
+ * The loopback learning-item generation API.
  *
- * Nothing in Eclipse depends on this server. It is a stretch enhancement: the
- * extension builds, tests, demos and teaches with it switched off, which is the
- * default.
+ * Eclipse uses this server for broad, level-matched vocabulary coverage. The
+ * bundled catalog remains a safe fallback when a page happens to match it.
  *
  * Logging policy, enforced by a test: event names, durations, counts and error
  * codes only. A submitted sentence or a generated French surface never reaches
@@ -28,7 +27,7 @@ export interface AppOptions {
   readonly now?: () => number;
 }
 
-export const DEFAULT_SERVER_TIMEOUT_MS = 8000;
+export const DEFAULT_SERVER_TIMEOUT_MS = 18_000;
 
 export function createApp(options: AppOptions): Express {
   const app = express();

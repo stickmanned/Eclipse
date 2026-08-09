@@ -31,7 +31,7 @@ describe('generation cache orchestration', () => {
     const area = memoryArea();
     const fetcher = vi.fn(async () => success([candidate(first)]));
 
-    const initial = await generateWithCache([first], area, fetcher);
+    const initial = await generateWithCache([first], 'B1', area, fetcher);
     expect(initial.ok).toBe(true);
     expect(fetcher).toHaveBeenCalledTimes(1);
 
@@ -41,6 +41,7 @@ describe('generation cache orchestration', () => {
 
     const cached = await generateWithCache(
       [first],
+      'B1',
       area,
       vi.fn(async () => failure('PROVIDER_UNAVAILABLE')),
     );
@@ -54,13 +55,13 @@ describe('generation cache orchestration', () => {
 
   it('requests only cache misses and preserves caller order', async () => {
     const area = memoryArea();
-    await generateWithCache([first], area, async () => success([candidate(first)]));
+    await generateWithCache([first], 'B1', area, async () => success([candidate(first)]));
 
     const fetcher = vi.fn(async (sentences: readonly (typeof first)[]) => {
       expect(sentences).toEqual([second]);
       return success([candidate(second)]);
     });
-    const result = await generateWithCache([first, second], area, fetcher);
+    const result = await generateWithCache([first, second], 'B1', area, fetcher);
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.data.map((item) => item.sentenceId)).toEqual(['s0', 's1']);
@@ -69,9 +70,9 @@ describe('generation cache orchestration', () => {
 
   it('returns validated cache hits when a request for other misses fails', async () => {
     const area = memoryArea();
-    await generateWithCache([first], area, async () => success([candidate(first)]));
+    await generateWithCache([first], 'B1', area, async () => success([candidate(first)]));
 
-    const result = await generateWithCache([first, second], area, async () =>
+    const result = await generateWithCache([first, second], 'B1', area, async () =>
       failure('PROVIDER_TIMEOUT'),
     );
 

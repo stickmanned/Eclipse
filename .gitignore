@@ -18,5 +18,6 @@ Thumbs.db
 # Editors
 .idea/
 .vscode/
-*.swp
+# Local history ledger
+.docs/DEVELOPMENT_PLAN_HISTORY.md
 

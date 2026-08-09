@@ -1,9 +1,9 @@
 /**
- * Whether the optional generation API is switched on.
+ * Health state for the always-on generation API.
  *
- * Off by default and off after a reset. The origin is a build-time constant,
- * not user input, so there is no way for a page to point Eclipse at a server of
- * its choosing.
+ * `enabled` remains in the stored shape for backwards compatibility, but the
+ * product no longer exposes or honours an off switch. The origin is a
+ * build-time constant, not user input.
  */
 
 import { z } from 'zod';
@@ -12,15 +12,21 @@ import { PROVIDER_SETTINGS_KEY } from './keys';
 import type { Result } from '../domain/errors';
 import { success } from '../domain/errors';
 
-/** The only origin Eclipse will ever contact, and only when explicitly enabled. */
+/** The only origin Eclipse will ever contact. */
 export const PROVIDER_ORIGIN = 'http://localhost:8787';
 export const PROVIDER_ENDPOINT = `${PROVIDER_ORIGIN}/api/context-traps`;
 export const PROVIDER_HEALTH_ENDPOINT = `${PROVIDER_ORIGIN}/health`;
 export const PROVIDER_PERMISSION_PATTERN = 'http://localhost:8787/*';
 export const PROVIDER_MODEL = 'gemini-3.5-flash-lite';
 
-/** Client-side ceiling on how long activation will wait for generated traps. */
-export const PROVIDER_TIMEOUT_MS = 4000;
+/** Client-side ceiling for one generation attempt. Gemini commonly needs 5–12 seconds. */
+export const PROVIDER_TIMEOUT_MS = 20_000;
+
+/** Health checks should still fail quickly when the local server is not running. */
+export const PROVIDER_HEALTH_TIMEOUT_MS = 3_000;
+
+/** One initial generation attempt plus one automatic recovery attempt. */
+export const PROVIDER_MAX_ATTEMPTS = 2;
 
 /** Maximum sentences sent in one request. */
 export const PROVIDER_MAX_SENTENCES = 8;
@@ -36,7 +42,7 @@ export const providerSettingsSchema = z.object({
 export type ProviderSettings = z.infer<typeof providerSettingsSchema>;
 
 export const DEFAULT_PROVIDER_SETTINGS: ProviderSettings = {
-  enabled: false,
+  enabled: true,
   lastError: null,
 };
 

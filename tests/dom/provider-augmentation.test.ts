@@ -1,5 +1,5 @@
 /**
- * The optional provider augments catalog-rich pages and supplies the initial
+ * The always-on provider augments catalog-rich pages and supplies the initial
  * placement plan for eligible catalog-free pages.
  *
  * Every case here activates for real and then checks what the catalog traps did
@@ -13,6 +13,7 @@ import type { OverlayStore } from '@/content/overlay-store';
 import type { OverlayCallbacks } from '@/content/session';
 import { failure, success, type Result } from '@/domain/errors';
 import type { ContextTrap, GeneratedTrapCandidate } from '@/domain/trap';
+import type { DelfLevel } from '@/domain/delf';
 import { flush, loadDemo, renderHtml } from './helpers';
 
 function hostWith(
@@ -32,10 +33,14 @@ function hostWith(
     },
     ...(requestGeneratedTraps
       ? {
-          requestGeneratedTraps: async (sessionId: string, list: ProviderSentence[]) => {
+          requestGeneratedTraps: async (
+            sessionId: string,
+            delfLevel: DelfLevel,
+            list: ProviderSentence[],
+          ) => {
             sessionIds.push(sessionId);
             sentences.push(list);
-            return requestGeneratedTraps(sessionId, list);
+            return requestGeneratedTraps(sessionId, delfLevel, list);
           },
         }
       : {}),
@@ -122,9 +127,22 @@ describe('provider disabled', () => {
 });
 
 describe('provider enabled', () => {
-  it('places two generated traps per eligible paragraph on a long article', async () => {
-    renderHtml(longGeneratedArticle());
-    const host = hostWith(async (_sessionId, sentences) =>
+  it('activates a single substantial text paragraph', async () => {
+    renderHtml(longGeneratedArticle(1));
+    const host = hostWith(async (_sessionId, _delfLevel, sentences) =>
+      success(sentences.map((sentence) => generatedFor(sentence.id, sentence.text))),
+    );
+    const session = new ContentSession(document, host);
+
+    const result = await session.activate('ses_single_paragraph', true);
+
+    expect(result.ok).toBe(true);
+    expect(tokens()).toHaveLength(2);
+  });
+
+  it('places two generated traps per eligible paragraph beyond the old page cap', async () => {
+    renderHtml(longGeneratedArticle(35));
+    const host = hostWith(async (_sessionId, _delfLevel, sentences) =>
       success(sentences.map((sentence) => generatedFor(sentence.id, sentence.text))),
     );
     const session = new ContentSession(document, host);
@@ -134,7 +152,7 @@ describe('provider enabled', () => {
     await flush();
     await flush();
 
-    expect(tokens()).toHaveLength(12);
+    expect(tokens()).toHaveLength(70);
     for (const paragraph of document.querySelectorAll('p')) {
       expect(paragraph.querySelectorAll('[data-eclipse-owner]')).toHaveLength(2);
     }
@@ -148,7 +166,7 @@ describe('provider enabled', () => {
     const pending = new Promise<Result<GeneratedTrapCandidate[]>>((resolve) => {
       resolveRequest = resolve;
     });
-    const host = hostWith(async (_sessionId, sentences) => {
+    const host = hostWith(async (_sessionId, _delfLevel, sentences) => {
       requested = sentences;
       return pending;
     });
@@ -192,7 +210,7 @@ describe('provider enabled', () => {
     expect(tokens()).toHaveLength(catalogCount);
   });
 
-  it('sends at most eight sentences, and only sentences', async () => {
+  it('sends batches of at most eight sentences, and only sentences', async () => {
     renderHtml(loadDemo('demo-a.html'));
     const host = hostWith(async () => success<GeneratedTrapCandidate[]>([]));
     const session = new ContentSession(document, host);
@@ -200,22 +218,22 @@ describe('provider enabled', () => {
     await session.activate('ses_a', true);
     await flush();
 
-    const sent = host.sentences[0];
-    expect(sent).toBeDefined();
-    expect(sent!.length).toBeGreaterThan(0);
-    expect(sent!.length).toBeLessThanOrEqual(8);
-
-    for (const sentence of sent!) {
-      expect(sentence.text.length).toBeLessThanOrEqual(300);
-      // No URL, no title, no profile — the payload is text and an id.
-      expect(Object.keys(sentence).sort()).toEqual(['id', 'text']);
+    expect(host.sentences.length).toBeGreaterThan(0);
+    for (const batch of host.sentences) {
+      expect(batch.length).toBeGreaterThan(0);
+      expect(batch.length).toBeLessThanOrEqual(8);
+      for (const sentence of batch) {
+        expect(sentence.text.length).toBeLessThanOrEqual(300);
+        // No URL, no title, no profile — the payload is text and an id.
+        expect(Object.keys(sentence).sort()).toEqual(['id', 'text']);
+      }
     }
   });
 
   it('places a valid generated trap into a block the catalog did not use', async () => {
     renderHtml(loadDemo('demo-a.html'));
 
-    const host = hostWith(async (_sessionId, sentences) => {
+    const host = hostWith(async (_sessionId, _delfLevel, sentences) => {
       const target = sentences.find((sentence) => /\bstay\b/i.test(sentence.text));
       if (!target) return success<GeneratedTrapCandidate[]>([]);
       return success([generatedFor(target.id, target.text)]);
@@ -235,7 +253,7 @@ describe('provider enabled', () => {
     // nothing changed. Both are correct; what must never happen is losing a
     // catalog trap.
     expect(after.length).toBeGreaterThanOrEqual(before);
-    expect(after.length).toBeLessThanOrEqual(60);
+    expect(after.length).toBeLessThanOrEqual(120);
     if (generated.length > 0) {
       expect(generated[0]?.textContent).toBe('observer');
       expect(generated[0]?.getAttribute('lang')).toBe('fr-FR');
@@ -244,7 +262,7 @@ describe('provider enabled', () => {
 
   it('never exceeds two traps per paragraph or the page ceiling', async () => {
     renderHtml(loadDemo('demo-a.html'));
-    const host = hostWith(async (_sessionId, sentences) =>
+    const host = hostWith(async (_sessionId, _delfLevel, sentences) =>
       success(sentences.map((sentence) => generatedFor(sentence.id, sentence.text))),
     );
 
@@ -252,7 +270,7 @@ describe('provider enabled', () => {
     const result = await session.activate('ses_a', true);
     expect(result.ok).toBe(true);
 
-    expect(tokens().length).toBeLessThanOrEqual(60);
+    expect(tokens().length).toBeLessThanOrEqual(120);
     for (const paragraph of document.querySelectorAll('p')) {
       expect(paragraph.querySelectorAll('[data-eclipse-owner]').length).toBeLessThanOrEqual(2);
     }

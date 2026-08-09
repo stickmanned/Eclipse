@@ -20,6 +20,7 @@
 import { duePriority, isDue } from './scheduling';
 import type { ConceptMastery } from './profile';
 import { predictCorrect } from './scoring';
+import { difficultyMatchesDelfLevel, type DelfLevel } from './delf';
 
 export const WEIGHT_UNCERTAINTY = 0.4;
 export const WEIGHT_DUE_PRIORITY = 0.3;
@@ -64,6 +65,8 @@ export interface SelectionContext {
   readonly globalAbility: number;
   readonly mastery: Readonly<Record<string, ConceptMastery>>;
   readonly now: Date;
+  /** When present, only learning items inside this DELF difficulty lens survive. */
+  readonly delfLevel?: DelfLevel;
 }
 
 /** Peaks at 1 when the learner is a coin-flip, falls to 0 at certainty. */
@@ -131,7 +134,7 @@ export interface SelectionLimits {
 }
 
 export const DEFAULT_SELECTION_LIMITS = {
-  maxTraps: 60,
+  maxTraps: 120,
   maxTrapsPerBlock: 2,
   minTraps: 2,
   maxDensity: 0.08,
@@ -152,7 +155,11 @@ export function selectCandidates(
   context: SelectionContext,
   limits: SelectionLimits,
 ): ScoredCandidate[] {
-  const ranked = candidates.map((candidate) => scoreCandidate(candidate, context));
+  const delfLevel = context.delfLevel;
+  const levelMatched = delfLevel
+    ? candidates.filter((candidate) => difficultyMatchesDelfLevel(candidate.difficulty, delfLevel))
+    : candidates;
+  const ranked = levelMatched.map((candidate) => scoreCandidate(candidate, context));
   ranked.sort(compareCandidates);
 
   const densityCap = Math.floor(limits.eligibleWordCount * limits.maxDensity);

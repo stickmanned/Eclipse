@@ -13,12 +13,13 @@ Use this only with a newly rotated/restricted Gemini key. Never paste the key in
 
 ## Browser checks
 
-1. Open the popup and enable AI-generated traps. The readiness check must succeed.
+1. Open the popup, choose a DELF level, and confirm that it reports **AI vocabulary is always on**. There must be no AI toggle.
 2. Start Eclipse on `demo/no-traps.html` and on a second eligible English article with no catalog matches.
-3. Each page must receive 2–4 French tokens. Complete one challenge and verify the Truth Card.
-4. End each session and verify the article's normalized visible text is restored.
-5. Repeat the first page. The second activation must use the cache and must not create a second generation log entry for the same sentences.
-6. Stop the server and try an uncached catalog-free article. Eclipse must show a recoverable local-server error and leave the page unchanged.
+3. Each substantial paragraph should receive up to two French words or complete phrases at the selected level, subject to sentence quality and the 8% density ceiling. Complete both kinds of challenge and verify their Truth Cards.
+4. A transient 429, 5xx, timeout, network interruption, or malformed response should be retried once by the same Start action; only a repeated failure should appear in the popup.
+5. End each session and verify the article's normalized visible text is restored.
+6. Repeat the first page. The second activation must use the cache and must not create a second generation log entry for the same sentences.
+7. Stop the server and try an uncached catalog-free article. Eclipse must show a recoverable local-server error and leave the page unchanged.
 
 ## Privacy and release checks
 

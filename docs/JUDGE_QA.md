@@ -12,7 +12,7 @@ No, and you can check it. Reset all Eclipse data and start Eclipse on Demo B fir
 
 **Why does it need a click on every page? Every other extension just works.**
 
-Because every other extension asked for `host_permissions` on every site you visit. Eclipse ships with `activeTab`, which grants access to one tab, temporarily, after you invoke it — and to nothing else. There is no `host_permissions` in the manifest at all.
+Because every other extension asked for `host_permissions` on every site you visit. Eclipse ships with `activeTab`, which grants access to one article tab temporarily after you invoke it. Its only standing host permission is `localhost:8787` for the AI service; there is no broad access to article sites.
 
 That is the trade, and it is deliberate: standing access to the whole web is a very large ask for a vocabulary exercise. One click is the price of not making it.
 
@@ -38,9 +38,7 @@ It restores the **normalized visible text** exactly — captured before the firs
 
 **Is there an LLM in this?**
 
-Not in the path you just saw. The demo, the transfer, and the Truth Cards all run from a curated catalog that ships inside the extension. Disconnect the network and everything still works.
-
-There is an _optional_ local server that proposes additional traps with Gemini 3.5 Flash-Lite. It is off by default, has a four-second client timeout, and validates output against the same rules the catalog passes before anything renders. Catalog-rich pages never wait for it. When an eligible page has fewer than two catalog traps, enabled AI gets one bounded attempt to supply the initial exercise; failure leaves the page untouched and returns an actionable popup error.
+Yes. AI is the main coverage path: a local server proposes level-matched vocabulary and complete phrases with Gemini 3.5 Flash-Lite. It has a 20-second client timeout and an 18-second server timeout per attempt, retries one transient browser/API failure plus one transient Gemini overload, and validates output against the same rules as the bundled fallback catalog before anything renders. Generation runs in bounded batches before one atomic placement pass; failure leaves a catalog-free page untouched and returns an actionable popup error.
 
 ---
 
@@ -54,21 +52,19 @@ Layered. The prompt states that page sentences are untrusted data and must never
 
 **What data leaves my machine?**
 
-With AI traps off — the default — nothing at all. No network requests are made.
-
-With them on: at most eight sentences of article text go to a server on `localhost:8787` that you run yourself, and that server sends those sentences to Google Gemini. Never the page URL, profile, or answer history. The cache key is a scoped SHA-256 digest and the cached template omits the full sentence, though it retains the short source and clue spans required to replay the exercise. The server logs event names, counts, and durations only; a test searches captured logs for submitted/generated content.
+Article text and the selected DELF level go in batches of at most eight sentences to a server on `localhost:8787` that you run yourself, and that server sends them to Google Gemini. Never the page URL, mastery records, or answer history. The cache key is a level-scoped SHA-256 digest and the cached template omits the full sentence, though it retains the short source and clue spans required to replay the exercise. The server logs event names, counts, and durations only; a test searches captured logs for submitted/generated content.
 
 ---
 
 **Is the moon a proficiency score?**
 
-No, and we are careful not to imply it. It is a study signal over a dozen curated concepts in a short session. Full moon requires a score of 1.25 or higher **plus** at least three attempts and two correct — a single lucky guess never fills it. No CEFR mapping, no level claim.
+No. The moon is item-mastery progress. DELF A1–B2 is a separate reading lens chosen directly or estimated by the eight-question diagnostic; that diagnostic is a practical starting point, not an official exam or certificate. Full moon still requires sustained evidence, so a single lucky guess never fills it.
 
 ---
 
 **Why French, and why these words?**
 
-One pair, done properly. The catalog is built around the three ways a French word actually ambushes an English reader: false friends (`actuellement` is not "actually"), polysemy (`appel` is a call, except in a courtroom), and idioms that do not decompose (`avoir le cafard`). Every entry carries required context, forbidden context, and a clue that must be quotable from the sentence — so `appel` only becomes a trap when a lawyer and a verdict are present, and never when something merely "has wide appeal".
+One pair, done properly. AI selects ordinary high-value words, complete phrases, connectors, idioms, false friends, and polysemous vocabulary at the learner's DELF level. Every item still carries an exact source span and a clue quotable from the sentence, and every generated field passes strict validation before placement.
 
 ---
 
@@ -80,7 +76,7 @@ Selection maximises uncertainty — it prefers the item you are least sure about
 
 **What did you cut?**
 
-Automatic transformation, a chatbot, text-to-speech, accounts and sync, analytics, more language pairs, full-page translation, and a separate dashboard. The optional provider was the designated first cut if the schedule slipped; it survived because the core gates went green first, which was the condition for starting it.
+Automatic transformation, a chatbot, text-to-speech, accounts and sync, analytics, more language pairs, full-page translation, and a separate dashboard.
 
 ---
 

@@ -1,10 +1,10 @@
 {
   "name": "eclipse-context-traps",
-  "displayName": "Eclipse — Context Traps",
+  "displayName": "Eclipse — French Reading",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Eclipse turns any English article into a French context exercise. It hides the familiar meaning, asks you to infer the truth from context, and reveals the evidence behind the answer.",
+  "description": "Eclipse turns English articles into DELF-matched French vocabulary and phrase exercises powered by AI.",
   "license": "MIT",
   "engines": {
     "node": ">=22"

@@ -76,6 +76,7 @@ export function fakeProvider(options: FakeProviderOptions = {}): TrapProvider {
       }
 
       const traps = [];
+      const difficulty = { A1: 0.2, A2: 0.4, B1: 0.6, B2: 0.8 }[request.delfLevel];
       for (const sentence of request.sentences) {
         const rule = RULES.find((candidate) =>
           new RegExp(`\\b${candidate.source}\\b`, 'i').test(sentence.text),
@@ -93,7 +94,7 @@ export function fakeProvider(options: FakeProviderOptions = {}): TrapProvider {
           clueSpan: rule.clue,
           explanation: rule.explanation,
           distractorExplanation: rule.distractorExplanation,
-          difficulty: 0.5,
+          difficulty,
           confidence: 0.9,
         });
       }

@@ -18,12 +18,12 @@ test.describe('screens', () => {
   test('capture', async ({ context, driver, extensionId }) => {
     mkdirSync(OUT, { recursive: true });
 
-    // 1. Calibration, first question.
+    // 1. DELF setup.
     const popup = await context.newPage();
-    await popup.setViewportSize({ width: 360, height: 620 });
+    await popup.setViewportSize({ width: 340, height: 600 });
     await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-    await expect(popup.getByText(/Question 1 of 3/)).toBeVisible();
-    await popup.screenshot({ path: join(OUT, '1-calibration.png') });
+    await expect(popup.getByRole('heading', { name: 'Set your DELF level' })).toBeVisible();
+    await popup.screenshot({ path: join(OUT, '1-level-setup.png') });
 
     // 2. The article with traps placed.
     const page = await context.newPage();
