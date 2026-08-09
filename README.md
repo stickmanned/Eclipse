@@ -26,7 +26,7 @@ The other learning mode which Eclipse offers, Paraphrase mode, provides the View
 
 ## Video walkthrough
 
-See [here](https://youtu.be/j-cHfa5xX30)
+**See [here](https://youtu.be/j-cHfa5xX30)**
 
 ---
 
