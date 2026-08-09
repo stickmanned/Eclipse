@@ -8450,7 +8450,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		if (hostname.includes("*") && hostname.length > 1 && !hostname.startsWith("*.")) throw new InvalidMatchPattern(matchPattern, `If using a wildcard (*), it must go at the start of the hostname`);
 	}
 	//#endregion
-	//#region \0virtual:wxt-background-entrypoint?/Users/william/Code/Eclipse/src/entrypoints/background.ts
+	//#region \0virtual:wxt-background-entrypoint?C:/Users/fengy/OneDrive/Documents/NW/Eclipse/src/entrypoints/background.ts
 	function print(method, ...args) {
 		if (typeof args[0] === "string") method(`[wxt] ${args.shift()}`, ...args);
 		else method("[wxt]", ...args);
@@ -8466,7 +8466,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 	/** Connect to the websocket and listen for messages. */
 	function getDevServerWebSocket() {
 		if (ws == null) {
-			const serverUrl = "ws://localhost:3001";
+			const serverUrl = "ws://localhost:3000";
 			logger.debug("Connecting to dev server @", serverUrl);
 			ws = new WebSocket(serverUrl, "vite-hmr");
 			ws.addWxtEventListener = ws.addEventListener.bind(ws);

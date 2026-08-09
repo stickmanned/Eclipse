@@ -247,7 +247,7 @@ function Sentence({ trap }: { readonly trap: ContextTrap }) {
   );
 }
 
-/** The French word or phrase, paired with Fengyuan's pronunciation control. */
+/** The French word or phrase, paired with a button to hear it spoken aloud. */
 function SurfaceWord({ text, id }: { readonly text: string; readonly id?: string }) {
   return (
     <div className="eclipse-surface-row">

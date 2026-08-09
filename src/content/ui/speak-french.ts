@@ -1,4 +1,12 @@
-/** Speak French text through the browser's Web Speech API. */
+/**
+ * Speaks French text aloud via the Web Speech API.
+ *
+ * Left to its defaults, `speechSynthesis` will read French text with
+ * whatever voice the browser considers "default" — often an English voice
+ * reading French phonetically. This picks an actual fr-FR voice when one is
+ * installed, and prefers a local (on-device) voice over a remote one since
+ * local voices keep working offline and start speaking with no network lag.
+ */
 
 let cachedVoices: SpeechSynthesisVoice[] = [];
 
