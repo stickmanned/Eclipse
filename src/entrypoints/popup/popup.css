@@ -2307,3 +2307,307 @@ button {
     box-shadow: none;
   }
 }
+
+/* ==========================================================================
+   Paraphrase Mode — Penumbra
+   Appended block. Adds only `.lens-switch`, `.paraphrase-*` and `.pm-*`
+   selectors; no rule above is modified. Periwinkle is this mode's accent so a
+   glance at the popup says which lens is loaded, the same way the on-page token
+   does.
+   ========================================================================== */
+
+:root {
+  --ec-peri: #a5b4fc;
+  --ec-peri-high: #c7d2fe;
+  --ec-peri-soft: rgba(165, 180, 252, 0.13);
+  --ec-peri-line: rgba(165, 180, 252, 0.32);
+}
+
+.lens-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--ec-line);
+  border-radius: var(--ec-radius-pill);
+  background: var(--ec-glass-soft);
+}
+
+.lens-switch button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--ec-radius-pill);
+  background: transparent;
+  color: var(--ec-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: var(--ec-transition);
+}
+
+.lens-switch button:hover {
+  color: var(--ec-text-soft);
+}
+
+.lens-switch button:focus-visible {
+  outline: 2px solid var(--ec-peri);
+  outline-offset: 1px;
+}
+
+.lens-switch button[aria-checked='true'][data-lens='translate'] {
+  border-color: var(--ec-gold-line);
+  background: var(--ec-gold-soft);
+  color: var(--ec-gold-high);
+}
+
+.lens-switch button[aria-checked='true'][data-lens='paraphrase'] {
+  border-color: var(--ec-peri-line);
+  background: var(--ec-peri-soft);
+  color: var(--ec-peri-high);
+}
+
+.lens-glyph {
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* --- hero ---------------------------------------------------------------- */
+
+.paraphrase-hero {
+  border-color: var(--ec-peri-line);
+  background:
+    linear-gradient(118deg, var(--ec-peri-soft), transparent 42%),
+    linear-gradient(160deg, var(--ec-glass-strong), var(--ec-orbit-deep));
+  box-shadow:
+    var(--ec-shadow-card),
+    0 0 24px rgba(165, 180, 252, 0.16);
+}
+
+.paraphrase-hero[data-active='true'] {
+  border-color: var(--ec-peri);
+  box-shadow:
+    var(--ec-shadow-card),
+    0 0 28px rgba(165, 180, 252, 0.34);
+}
+
+.pm-dial {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 88px;
+  height: 88px;
+  color: var(--ec-peri-high);
+}
+
+.pm-dial strong {
+  font-family: var(--ec-font-mono);
+  font-size: 26px;
+  line-height: 1;
+}
+
+.pm-dial-unit {
+  margin-top: 2px;
+  color: var(--ec-text-faint);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.pm-dial-ring {
+  position: absolute;
+  inset: 6px;
+  border: 1px solid var(--ec-peri-line);
+  border-top-color: var(--ec-peri);
+  border-radius: 50%;
+  animation: pm-orbit 9s linear infinite;
+}
+
+@keyframes pm-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --- cards --------------------------------------------------------------- */
+
+.pm-card {
+  display: grid;
+  gap: 9px;
+  padding: 11px;
+}
+
+.pm-card > p {
+  margin: 0;
+  color: var(--ec-text-muted);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.pm-track {
+  position: relative;
+  height: 10px;
+  border-radius: var(--ec-radius-pill);
+  background: linear-gradient(
+    90deg,
+    rgba(45, 212, 191, 0.22),
+    rgba(165, 180, 252, 0.22),
+    rgba(139, 92, 246, 0.28)
+  );
+}
+
+.pm-window {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  border: 1px solid var(--ec-peri-line);
+  border-radius: var(--ec-radius-pill);
+  background: var(--ec-peri-soft);
+}
+
+.pm-center,
+.pm-target {
+  position: absolute;
+  top: -4px;
+  width: 2px;
+  height: 18px;
+  border-radius: 2px;
+}
+
+.pm-center {
+  background: var(--ec-text-soft);
+}
+
+.pm-target {
+  width: 3px;
+  background: var(--ec-peri-high);
+  box-shadow: 0 0 8px rgba(165, 180, 252, 0.8);
+}
+
+.pm-track-legend {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  color: var(--ec-text-faint);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pm-read {
+  color: var(--ec-text-soft) !important;
+  font-size: 11px !important;
+}
+
+/* --- register ranking ---------------------------------------------------- */
+
+.pm-registers {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pm-registers li {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--ec-radius-sm);
+}
+
+.pm-registers li[data-focus='true'] {
+  border-color: var(--ec-peri-line);
+  background: var(--ec-peri-soft);
+}
+
+.pm-register-name {
+  color: var(--ec-text-soft);
+  font-size: 10px;
+}
+
+.pm-register-count {
+  color: var(--ec-text-faint);
+  font-family: var(--ec-font-mono);
+  font-size: 9px;
+  text-align: right;
+}
+
+.pm-bar {
+  display: block;
+  height: 5px;
+  border-radius: var(--ec-radius-pill);
+  background: rgba(148, 163, 184, 0.2);
+  overflow: hidden;
+}
+
+.pm-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: var(--ec-radius-pill);
+  background: linear-gradient(90deg, var(--ec-violet), var(--ec-peri-high));
+}
+
+/* --- owed wordings ------------------------------------------------------- */
+
+.pm-review {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pm-review li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 7px;
+  padding: 5px 7px;
+  border: 1px solid var(--ec-line);
+  border-radius: var(--ec-radius-sm);
+  background: var(--ec-glass-soft);
+}
+
+.pm-review-original {
+  color: var(--ec-peri-high);
+  font-size: 11px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.pm-review-arrow {
+  color: var(--ec-text-faint);
+  font-size: 10px;
+}
+
+.pm-review-simple {
+  color: var(--ec-text-muted);
+  font-size: 10.5px;
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pm-dial-ring {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .lens-switch button[aria-checked='true'],
+  .pm-registers li[data-focus='true'] {
+    border: 2px solid Highlight;
+  }
+  .pm-bar > span,
+  .pm-target,
+  .pm-center {
+    background: Highlight;
+  }
+}

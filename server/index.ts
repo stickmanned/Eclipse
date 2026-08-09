@@ -9,6 +9,8 @@
 
 import { createApp, DEFAULT_SERVER_TIMEOUT_MS } from './app';
 import { loadLocalEnvironment, resolveOrigins, resolveProvider } from './config';
+import { createParaphraseRouter } from './paraphrase/router';
+import { resolveParaphraseProvider } from './paraphrase/config';
 
 loadLocalEnvironment();
 
@@ -18,16 +20,25 @@ const HOST = '127.0.0.1';
 const provider = resolveProvider();
 const allowedOrigins = resolveOrigins();
 
+const paraphraseProvider = resolveParaphraseProvider();
+
 const app = createApp({
   provider,
   allowedOrigins,
   timeoutMs: DEFAULT_SERVER_TIMEOUT_MS,
 });
 
+// Paraphrase Mode shares the port so the extension keeps exactly one loopback
+// host permission. Mounted after createApp: Express skips four-arity error
+// handlers during normal dispatch, so the app's error middleware still runs
+// last for these routes too.
+app.use(createParaphraseRouter({ provider: paraphraseProvider, allowedOrigins }));
+
 app.listen(PORT, HOST, () => {
   console.log(`Eclipse generation API on http://${HOST}:${PORT}`);
   console.log(`  provider: ${provider?.name ?? 'disabled (catalog-only)'}`);
   console.log(`  model: ${provider?.model ?? 'none'}`);
+  console.log(`  paraphrase: ${paraphraseProvider?.name ?? 'disabled'}`);
   console.log(
     `  allowed origins: ${allowedOrigins.length > 0 ? allowedOrigins.join(', ') : 'none'}`,
   );

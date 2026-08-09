@@ -48,6 +48,7 @@ import {
 } from '../storage/provider-settings';
 import { generateWithCache } from '../provider/generate-with-cache';
 import { clearProviderCache } from '../storage/provider-cache';
+import { registerParaphraseBridge } from '../paraphrase/background-bridge';
 
 /** Built bundle path of the runtime-injected content script. */
 const CONTENT_SCRIPT_FILE = '/content-scripts/eclipse.js' as const;
@@ -62,6 +63,11 @@ export default defineBackground(() => {
   const local = chromeArea(browser.storage.local);
   const session = chromeArea(browser.storage.session);
   let answerWriteQueue: Promise<void> = Promise.resolve();
+
+  // Paraphrase Mode's half of the worker. It registers a `runtime.onConnect`
+  // listener and its own tab listeners; it shares no state with the handlers
+  // below and never touches this mode's session, profile or provider settings.
+  registerParaphraseBridge();
 
   browser.runtime.onMessage.addListener((raw, sender, sendResponse) => {
     const message = parseMessage(raw);

@@ -33,6 +33,7 @@ import {
   summarizeActivityRange,
   type LearningStatsSnapshot,
 } from '../../domain/stats';
+import { LensSwitch, ParaphraseView, type Lens } from './ParaphraseView';
 
 type Phase = 'loading' | 'onboarding' | 'ready' | 'activating' | 'active';
 type PopupTab = 'session' | 'vocabulary' | 'stats' | 'settings';
@@ -107,6 +108,7 @@ export function App() {
   const [stale, setStale] = useState(false);
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [pendingPracticeLaunch, setPendingPracticeLaunch] = useState(false);
+  const [lens, setLens] = useState<Lens>('translate');
 
   const refresh = useCallback(async () => {
     const result = await send<StatusData>({ type: 'GET_STATUS' });
@@ -258,7 +260,14 @@ export function App() {
         aria-labelledby={`eclipse-tab-${activeTab}`}
       >
         {activeTab === 'session' && (
-          <SessionView status={status} phase={phase} onStart={onStart} onStop={onStop} />
+          <>
+            <LensSwitch value={lens} onChange={setLens} />
+            {lens === 'translate' ? (
+              <SessionView status={status} phase={phase} onStart={onStart} onStop={onStop} />
+            ) : (
+              <ParaphraseView status={status} />
+            )}
+          </>
         )}
         {activeTab === 'vocabulary' && (
           <VocabularyView
