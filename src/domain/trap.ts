@@ -87,6 +87,58 @@ export const contextTrapSchema = z.object({
   provider: z.enum(TRAP_PROVIDERS),
 });
 
+/**
+ * French-only orthography. Used to test *choices*, never a target surface.
+ */
+const FRENCH_ONLY_ORTHOGRAPHY = /[àâäçéèêëîïôöùûüÿœæ]/iu;
+
+/** Comparison form with diacritics removed. Only ever used to compare, never to store. */
+function deaccentFold(value: string): string {
+  return foldForComparison(value).normalize('NFD').replace(/\p{M}/gu, '');
+}
+
+/**
+ * The choices are English glosses, and these are the rules that keep them so.
+ *
+ * A model asked for "three English interpretations" sometimes answers with three
+ * French words instead — inflections of the highlighted surface, or its French
+ * near-synonyms. Such an item passes every structural rule and renders fine, but
+ * it asks the learner to pick a French word out of three French words, which
+ * teaches nothing. Two deterministic rules catch the shapes this has taken:
+ *
+ * 1. No choice may be the highlighted surface itself. Even for a true cognate —
+ *    `programme` offered as the meaning of `programme` — the item is vacuous, so
+ *    rejecting it is right whichever language the model thought it was writing.
+ * 2. No choice may carry French-only orthography. English glosses needing an
+ *    accent are rare, and each one has an accepted unaccented spelling ("cafe",
+ *    "naive", "facade"), so the rule costs almost nothing and blocks a whole
+ *    class of French leakage.
+ *
+ * Neither rule is language detection — there is no dictionary here. They are
+ * cheap structural checks against the ways this has actually failed. A choice
+ * set that slips past them is still possible; the prompt is the first line, and
+ * this is the one that holds when the prompt does not.
+ *
+ * Returns one issue string per offending choice, empty when the set is clean.
+ */
+export function findChoiceLanguageIssues(
+  choices: readonly string[],
+  targetSurface: string,
+): string[] {
+  const issues: string[] = [];
+  const surface = deaccentFold(targetSurface);
+
+  for (const [index, choice] of choices.entries()) {
+    if (deaccentFold(choice) === surface) {
+      issues.push(`choices.${index} repeats targetSurface instead of giving its English meaning`);
+    } else if (FRENCH_ONLY_ORTHOGRAPHY.test(choice)) {
+      issues.push(`choices.${index} is French, not an English meaning`);
+    }
+  }
+
+  return issues;
+}
+
 export interface TrapValidationOptions {
   /**
    * Treat the candidate as attacker-influenced. Enables instruction-shaped text
@@ -179,6 +231,9 @@ export function validateTrap(
   if (!value.choices.includes(value.acceptedChoice)) {
     issues.push('acceptedChoice must exactly match one of choices');
   }
+
+  // --- and every one of them is an English gloss, not a French word ---------
+  issues.push(...findChoiceLanguageIssues(value.choices, value.targetSurface));
 
   // --- generated traps carry a confidence floor ---------------------------
   if (untrusted && value.confidence < MIN_GENERATED_CONFIDENCE) {

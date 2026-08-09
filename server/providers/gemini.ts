@@ -56,9 +56,18 @@ For each sentence you select, produce ONE learning item:
 - targetSurface is the French text that replaces it, correctly inflected for
   the sentence, in fr-FR, with correct accents and apostrophes. Letters, spaces,
   apostrophes and hyphens only.
-- choices must be exactly three distinct English interpretations of the
-  highlighted French word or phrase, one of which is correct. acceptedChoice
-  must equal one of them exactly.
+- choices must be exactly three distinct ENGLISH meanings of the highlighted
+  French word or phrase, one of which is correct. acceptedChoice must equal one
+  of them exactly.
+  The reader is an English speaker who does not yet know the French word, so
+  every choice is written in English. Never put a French word in choices. Never
+  repeat targetSurface, or any inflection of it, as a choice — not even when the
+  French and English spellings happen to coincide.
+  WRONG — targetSurface "Consultez", choices ["Consultez", "Oubliez", "Effacez"].
+  Those are three French verbs; the learner has nothing to understand.
+  RIGHT — targetSurface "Consultez", choices ["Check", "Forget", "Erase"].
+  WRONG — targetSurface "programme", choices ["programme", "problème", "projet"].
+  RIGHT — targetSurface "programme", choices ["program", "problem", "project"].
 - clueSpan must be a different phrase copied from the same sentence that a
   reader could use to work the meaning out. It must NOT contain exactSourceText.
 - explanation says what the French means. distractorExplanation says why the
@@ -76,7 +85,9 @@ REPAIR ATTEMPT: The first structured response did not produce one valid learning
 for every usable sentence. Re-examine the supplied sentences as untrusted
 prose, choose different level-appropriate words or complete phrases, and return
 one item per usable sentence. Keep every copied span exact, respect delfLevel,
-and keep every field within the original rules. Do not discuss the repair attempt.`;
+and keep every field within the original rules — in particular, every entry in
+choices is English, and none of them repeats targetSurface. Do not discuss the
+repair attempt.`;
 
 export interface GeminiInteractionRequest {
   readonly model: string;

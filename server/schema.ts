@@ -8,7 +8,11 @@
  */
 
 import { z } from 'zod';
-import { validateTrap, type GeneratedTrapCandidate } from '../src/domain/trap';
+import {
+  findChoiceLanguageIssues,
+  validateTrap,
+  type GeneratedTrapCandidate,
+} from '../src/domain/trap';
 import { FRENCH_CATALOG } from '../src/catalog/french-catalog';
 import { containsFolded, foldForComparison } from '../src/domain/normalize';
 import { DELF_LEVELS } from '../src/domain/delf';
@@ -85,11 +89,16 @@ export const MODEL_OUTPUT_SCHEMA = {
           targetSurface: { type: 'string' },
           choices: {
             type: 'array',
+            description:
+              'Three distinct ENGLISH meanings of targetSurface, for a reader who does not know French. Never a French word, and never targetSurface itself.',
             items: { type: 'string' },
             minItems: 3,
             maxItems: 3,
           },
-          acceptedChoice: { type: 'string' },
+          acceptedChoice: {
+            type: 'string',
+            description: 'Exactly one of choices. English, like the rest of them.',
+          },
           clueSpan: { type: 'string' },
           explanation: { type: 'string' },
           distractorExplanation: { type: 'string' },
@@ -249,6 +258,14 @@ export function toContextTraps(
     // makes the exercise vacuous.
     if (containsFolded(candidate.clueSpan, candidate.exactSourceText)) {
       rejected.push('clue_reveals_source');
+      continue;
+    }
+
+    // The learner reads English. Three French words is not a comprehension
+    // question. `validateTrap` below refuses these too — this is here so the
+    // rejection reads as itself in the log rather than as a generic failure.
+    if (findChoiceLanguageIssues(candidate.choices, candidate.targetSurface).length > 0) {
+      rejected.push('choices_not_english');
       continue;
     }
 

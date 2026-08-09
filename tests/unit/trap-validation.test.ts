@@ -100,6 +100,63 @@ describe('trap schema rejection', () => {
   });
 });
 
+describe('choices are English meanings', () => {
+  // Both cases are traps the model actually produced and Eclipse actually
+  // rendered: three French words where three English meanings belonged.
+  it('rejects a choice set made of French inflections of the surface', () => {
+    expect(
+      reject({
+        conceptId: 'fr:consulter:check',
+        type: 'vocabulary',
+        sentence: 'Check the requirements page so you know what makes a passing submission.',
+        exactSourceText: 'Check',
+        targetSurface: 'Consultez',
+        choices: ['Consultez', 'Oubliez', 'Effacez'],
+        acceptedChoice: 'Consultez',
+        clueSpan: 'the requirements page',
+      }),
+    ).toMatch(/repeats targetSurface|is French/i);
+  });
+
+  it('rejects a cognate choice set where the answer restates the French word', () => {
+    expect(
+      reject({
+        conceptId: 'fr:programme:program',
+        type: 'vocabulary',
+        sentence: 'Boba Drops is a Hack Club program where members build personal websites.',
+        exactSourceText: 'program',
+        targetSurface: 'programme',
+        choices: ['programme', 'problème', 'projet'],
+        acceptedChoice: 'programme',
+        clueSpan: 'build personal websites',
+      }),
+    ).toMatch(/repeats targetSurface/i);
+  });
+
+  it('rejects a French distractor even when the accepted choice is English', () => {
+    expect(reject({ choices: ['wait', 'espérer', 'hear'] })).toMatch(/choices\.1 is French/i);
+  });
+
+  it('rejects a choice that is the surface with its accents stripped', () => {
+    expect(
+      reject({
+        conceptId: 'fr:esperer:hope',
+        sentence: 'They hope the doors open early.',
+        exactSourceText: 'hope',
+        targetSurface: 'espérer',
+        choices: ['esperer', 'hope', 'hear'],
+        acceptedChoice: 'hope',
+        clueSpan: 'the doors open early',
+      }),
+    ).toMatch(/repeats targetSurface/i);
+  });
+
+  it('accepts ordinary English choices', () => {
+    expect(validateTrap(validTrap()).ok).toBe(true);
+    expect(validateTrap(generatedTrap({ choices: ['wait', 'hope', 'hear'] })).ok).toBe(true);
+  });
+});
+
 describe('content safety', () => {
   it('rejects HTML in any renderable field', () => {
     expect(reject({ explanation: 'attendre means <b>wait</b>.' })).toMatch(/markup/i);

@@ -107,6 +107,60 @@ describe('parseModelOutput', () => {
   });
 });
 
+/** Drive the real path: raw model JSON through the schema, then conversion. */
+function convert(traps: Record<string, unknown>[], sentenceCount: number) {
+  const parsed = parseModelOutput({ traps });
+  expect(parsed?.droppedItems, 'items should reach toContextTraps, not die in the schema').toBe(0);
+  return toContextTraps(parsed!.output, requestOf(sentenceCount));
+}
+
+describe('toContextTraps rejects French choice sets', () => {
+  it('drops an item whose choices repeat the French surface', () => {
+    const result = convert(
+      [item(0, { choices: ['emprunter', 'acheter', 'vendre'], acceptedChoice: 'emprunter' })],
+      1,
+    );
+
+    expect(result.candidates).toHaveLength(0);
+    expect(result.rejected).toEqual(['choices_not_english']);
+  });
+
+  it('drops an item with an accented French distractor', () => {
+    const result = convert([item(0, { choices: ['borrow', 'acheter à', 'sell'] })], 1);
+
+    expect(result.candidates).toHaveLength(0);
+    expect(result.rejected).toEqual(['choices_not_english']);
+  });
+
+  /**
+   * The known limit, pinned so it stays known. An unaccented French distractor
+   * beside a correct English answer is indistinguishable from English without a
+   * dictionary, and this server has none. It is also the mild version of the
+   * bug: the learner can still find the right answer. The fully-French sets
+   * above — where the answer itself is French — are the ones that made the
+   * exercise unanswerable, and those are all caught.
+   */
+  it('cannot catch an unaccented French distractor beside an English answer', () => {
+    const result = convert([item(0, { choices: ['borrow', 'acheter', 'sell'] })], 1);
+
+    expect(result.candidates).toHaveLength(1);
+  });
+
+  it('keeps the English item beside a rejected French one', () => {
+    const result = convert(
+      [
+        item(0, { choices: ['emprunter', 'acheter', 'vendre'], acceptedChoice: 'emprunter' }),
+        item(1),
+      ],
+      2,
+    );
+
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0]?.sentenceId).toBe('s1');
+    expect(result.rejected).toEqual(['choices_not_english']);
+  });
+});
+
 describe('repairThreshold', () => {
   it('accepts a batch that covers most of its sentences', () => {
     expect(repairThreshold(8)).toBeLessThanOrEqual(7);

@@ -346,12 +346,49 @@ export const OVERLAY_CSS = `
 `;
 
 /**
- * Styles for the inline token. High specificity selector chain ensures host page
- * stylesheets can NEVER override token rules or cause grey boxes.
+ * One selector for every token rule.
+ *
+ * The class is repeated rather than varied: specificity is what decides a fight
+ * with a host stylesheet, and `.eclipse-token` three times costs nothing while
+ * putting the base rule out of reach of essentially anything a page can write.
+ * Repeating it also keeps every rule below on the *same* footing — which is the
+ * actual bug this shape prevents. When the base rule and a variant rule sat at
+ * different specificities and both restated the surface, a host page could beat
+ * one and lose to the other, so single-word tokens rendered as bare grey
+ * `<button>` chrome while multi-word ones kept the violet surface.
+ */
+const TOKEN_SEL = `html body button[data-eclipse-owner='eclipse'].eclipse-token.eclipse-token.eclipse-token`;
+
+/**
+ * The token surface is opaque.
+ *
+ * A translucent wash reads as whatever is behind it: grey on a light page, and
+ * gold text on that lands near 2.6:1, well under AA. An opaque violet base with
+ * a violet tint layered on top keeps the glass look on a dark article while
+ * making the token's appearance independent of the host page entirely — there
+ * is nothing behind it left to show through. `backdrop-filter` is gone for the
+ * same reason: invisible under an opaque fill, and it created a containing
+ * block for no benefit.
+ */
+const TOKEN_SURFACE = `
+  background-color: #1A1438 !important;
+  background-image: linear-gradient(180deg, rgba(139, 92, 246, 0.22) 0%, rgba(139, 92, 246, 0.08) 100%) !important;
+`;
+
+const TOKEN_SURFACE_HOVER = `
+  background-color: #241B54 !important;
+  background-image: linear-gradient(180deg, rgba(167, 139, 250, 0.34) 0%, rgba(139, 92, 246, 0.16) 100%) !important;
+`;
+
+/**
+ * Styles for the inline token.
+ *
+ * Every rule below states only what it changes. Nothing restates the surface,
+ * so a token can never be half-themed: the variants add an accent or a state
+ * colour on top of one base that all of them share.
  */
 export const TOKEN_CSS = `
-html body button[data-eclipse-owner='eclipse'].eclipse-token,
-button[data-eclipse-owner='eclipse'].eclipse-token {
+${TOKEN_SEL} {
   all: unset !important;
   -webkit-appearance: none !important;
   appearance: none !important;
@@ -359,34 +396,25 @@ button[data-eclipse-owner='eclipse'].eclipse-token {
   vertical-align: baseline !important;
   margin: 0 3px !important;
   padding: 2px 8px !important;
-  border: 1px solid rgba(139, 92, 246, 0.65) !important;
+  border: 1px solid rgba(139, 92, 246, 0.75) !important;
   border-radius: 6px !important;
-  /*
-   * Translucent Violet Glassmorphic Surface (65% Dark Violet Glass with 8px backdrop blur).
-   * High specificity selector prevents any host site stylesheet from overriding.
-   */
-  background: rgba(24, 20, 52, 0.65) !important;
-  background-color: rgba(24, 20, 52, 0.65) !important;
-  background-image: none !important;
-  backdrop-filter: blur(8px) !important;
-  -webkit-backdrop-filter: blur(8px) !important;
+${TOKEN_SURFACE}
   color: ${COLORS.gold} !important;
   font: inherit !important;
   font-style: normal !important;
   font-weight: 700 !important;
   text-decoration: none !important;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 4px rgba(0, 0, 0, 0.7) !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55) !important;
   line-height: inherit !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
   cursor: pointer !important;
-  transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease, color 180ms ease, transform 120ms ease !important;
+  transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease, color 180ms ease, transform 120ms ease !important;
   position: relative !important;
   min-height: 0 !important;
   box-sizing: border-box !important;
 }
 
-html body button[data-eclipse-owner='eclipse'].eclipse-token::after,
-button[data-eclipse-owner='eclipse'].eclipse-token::after {
+${TOKEN_SEL}::after {
   content: '';
   position: absolute;
   left: 0;
@@ -397,67 +425,54 @@ button[data-eclipse-owner='eclipse'].eclipse-token::after {
   min-width: 40px;
 }
 
-html body button[data-eclipse-owner='eclipse'].eclipse-token:hover,
-button[data-eclipse-owner='eclipse'].eclipse-token:hover {
+${TOKEN_SEL}:hover {
   border-color: ${COLORS.gold} !important;
-  background: rgba(42, 34, 90, 0.85) !important;
-  background-color: rgba(42, 34, 90, 0.85) !important;
+${TOKEN_SURFACE_HOVER}
   color: #FFFFFF !important;
   box-shadow: 0 0 14px rgba(247, 201, 72, 0.45), 0 2px 10px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
   transform: translateY(-1px) !important;
 }
 
-/* A phrase is one semantic unit even when it contains several words. */
-html body button[data-eclipse-owner='eclipse'].eclipse-token[data-eclipse-kind='phrase'],
-button[data-eclipse-owner='eclipse'].eclipse-token[data-eclipse-kind='phrase'] {
-  border-radius: 6px !important;
-  border: 1px solid rgba(139, 92, 246, 0.75) !important;
+/*
+ * A phrase is one semantic unit even when it contains several words. The only
+ * thing that marks it is the bottom rule — it adds to the shared surface rather
+ * than repainting it.
+ */
+${TOKEN_SEL}[data-eclipse-kind='phrase'] {
   border-bottom: 2.5px solid ${COLORS.violet} !important;
-  background: rgba(24, 20, 52, 0.65) !important;
-  background-color: rgba(24, 20, 52, 0.65) !important;
-  box-shadow:
-    inset 0 -2px 0 ${COLORS.violet},
-    0 2px 8px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
 }
 
-html body button[data-eclipse-owner='eclipse'].eclipse-token[data-eclipse-kind='phrase']:hover,
-button[data-eclipse-owner='eclipse'].eclipse-token[data-eclipse-kind='phrase']:hover {
-  background: rgba(42, 34, 90, 0.85) !important;
-  background-color: rgba(42, 34, 90, 0.85) !important;
-  box-shadow:
-    inset 0 -2px 0 ${COLORS.violet},
-    0 0 14px rgba(139, 92, 246, 0.45),
-    0 2px 10px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
-}
-
-html body button[data-eclipse-owner='eclipse'].eclipse-token:focus-visible,
-button[data-eclipse-owner='eclipse'].eclipse-token:focus-visible {
+${TOKEN_SEL}:focus-visible {
   outline: 3px solid ${COLORS.gold} !important;
   outline-offset: 2px !important;
 }
 
-html body button[data-eclipse-owner='eclipse'].eclipse-token[data-answered='correct'],
-button[data-eclipse-owner='eclipse'].eclipse-token[data-answered='correct'] {
+${TOKEN_SEL}[data-answered='correct'] {
   border-color: ${COLORS.correct} !important;
   color: ${COLORS.correct} !important;
-  background: rgba(11, 45, 38, 0.65) !important;
-  background-color: rgba(11, 45, 38, 0.65) !important;
+  background-color: #0B2D26 !important;
+  background-image: linear-gradient(180deg, rgba(45, 212, 191, 0.18) 0%, rgba(45, 212, 191, 0.06) 100%) !important;
   box-shadow: 0 0 12px rgba(45, 212, 191, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
 }
 
-html body button[data-eclipse-owner='eclipse'].eclipse-token[data-answered='incorrect'],
-button[data-eclipse-owner='eclipse'].eclipse-token[data-answered='incorrect'] {
+${TOKEN_SEL}[data-answered='incorrect'] {
   border-color: ${COLORS.incorrect} !important;
   color: ${COLORS.incorrect} !important;
-  background: rgba(45, 11, 22, 0.65) !important;
-  background-color: rgba(45, 11, 22, 0.65) !important;
+  background-color: #2D0B16 !important;
+  background-image: linear-gradient(180deg, rgba(251, 113, 133, 0.18) 0%, rgba(251, 113, 133, 0.06) 100%) !important;
   box-shadow: 0 0 12px rgba(251, 113, 133, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
 }
 
+/* The phrase rule sets border-bottom, so answered states have to restate it. */
+${TOKEN_SEL}[data-eclipse-kind='phrase'][data-answered='correct'] {
+  border-bottom-color: ${COLORS.correct} !important;
+}
+
+${TOKEN_SEL}[data-eclipse-kind='phrase'][data-answered='incorrect'] {
+  border-bottom-color: ${COLORS.incorrect} !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  html body button[data-eclipse-owner='eclipse'].eclipse-token,
-  button[data-eclipse-owner='eclipse'].eclipse-token { transition: none !important; }
+  ${TOKEN_SEL} { transition: none !important; }
 }
 `;
