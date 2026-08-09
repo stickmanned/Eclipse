@@ -195,17 +195,30 @@ export function geminiProvider(options: GeminiProviderOptions): TrapProvider {
           }
         }
 
-        if (!raw) return { kind: 'invalid', detail: 'provider returned no text output' };
+        const isLastAttempt = attempt === 1;
+
+        if (!raw) {
+          if (!isLastAttempt) continue;
+          if (bestOutput) return { kind: 'ok', output: bestOutput };
+          return { kind: 'invalid', detail: 'provider returned no text output' };
+        }
 
         let parsed: unknown;
         try {
           parsed = JSON.parse(raw);
         } catch {
+          if (!isLastAttempt) continue;
+          if (bestOutput) return { kind: 'ok', output: bestOutput };
           return { kind: 'invalid', detail: 'provider returned non-JSON output' };
         }
 
         const validated = modelOutputSchema.safeParse(parsed);
         if (!validated.success) {
+          // A single malformed field (the model drifting off the declared JSON
+          // Schema, e.g. an out-of-range number) is worth one repair-prompt
+          // retry rather than discarding an otherwise-good batch outright.
+          if (!isLastAttempt) continue;
+          if (bestOutput) return { kind: 'ok', output: bestOutput };
           return { kind: 'invalid', detail: 'provider output did not match the schema' };
         }
 
