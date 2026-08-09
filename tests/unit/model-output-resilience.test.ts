@@ -132,6 +132,25 @@ describe('toContextTraps rejects French choice sets', () => {
     expect(result.rejected).toEqual(['choices_not_english']);
   });
 
+  it('drops an all-French phrase set even when it avoids accents and the target surface', () => {
+    const result = convert(
+      [
+        item(0, {
+          conceptSlug: 'faire-face-a',
+          englishSense: 'deal-with',
+          type: 'phrase',
+          targetSurface: 'faire face à',
+          choices: ['affronter', 'oublier completement', 'creer rapidement'],
+          acceptedChoice: 'affronter',
+        }),
+      ],
+      1,
+    );
+
+    expect(result.candidates).toHaveLength(0);
+    expect(result.rejected).toEqual(['choices_not_english']);
+  });
+
   /**
    * The known limit, pinned so it stays known. An unaccented French distractor
    * beside a correct English answer is indistinguishable from English without a

@@ -2,24 +2,33 @@
  * The Eclipse content-script session.
  *
  * Owns article analysis, trap selection, DOM mutation and restoration,
- * challenge interaction state, and — uniquely in the extension — writing answer
- * outcomes to the learner profile.
+ * challenge interaction state. Answer writes cross one host seam owned by the
+ * background worker in production.
  *
  * Activation is all-or-nothing. If anything fails partway through placing
  * tokens, every token already inserted is taken back out before the failure is
  * returned, so the page is never left half-transformed.
  */
 
-import { createInteractionId } from '../domain/ids';
+import { createContextFingerprint, createInteractionId } from '../domain/ids';
 import { failure, success, type Failure, type Result } from '../domain/errors';
-import type { ActivatedData, DeactivatedData } from '../domain/messages';
+import type {
+  ActivatedData,
+  DeactivatedData,
+  RecordAnswerData,
+  RecordAnswerMessage,
+} from '../domain/messages';
 import { normalizedVisibleText } from '../domain/normalize';
-import { recordAnswer } from '../domain/mastery';
 import { isDue, currentIntervalDays } from '../domain/scheduling';
 import { DEFAULT_SELECTION_LIMITS } from '../domain/selection';
-import type { LearnerProfile } from '../domain/profile';
+import type { ConceptMastery } from '../domain/profile';
 import type { DelfLevel } from '../domain/delf';
-import { isCorrectChoice, type ContextTrap, type GeneratedTrapCandidate } from '../domain/trap';
+import {
+  isCorrectChoice,
+  learningItemKind,
+  type ContextTrap,
+  type GeneratedTrapCandidate,
+} from '../domain/trap';
 import {
   collectEligibleBlocks,
   findArticleRoot,
@@ -32,12 +41,7 @@ import { InvalidationWatcher, TokenRegistry } from './dom-tokens';
 import { planPlacements, type GeneratedSentenceTarget, type Placement } from './place-traps';
 import { OverlayStore } from './overlay-store';
 import type { StorageArea } from '../storage/area';
-import {
-  hasInteraction,
-  loadProfile,
-  rememberInteraction,
-  saveProfile,
-} from '../storage/profile-store';
+import { loadProfile } from '../storage/profile-store';
 
 export interface SessionHost {
   /** Mount the overlay UI. Returns a teardown function. */
@@ -46,6 +50,8 @@ export interface SessionHost {
   installTokenStyles(doc: Document): () => void;
   /** Storage area for the learner profile. */
   readonly storage: StorageArea;
+  /** Persist an answer through the extension's single writer. */
+  recordAnswer(answer: Omit<RecordAnswerMessage, 'type'>): Promise<Result<RecordAnswerData>>;
   /** Called when the host page invalidates Eclipse's DOM. */
   onInvalidated?(): void;
   /**
@@ -530,9 +536,22 @@ export class ContentSession {
     const token = state.registry.get(trapId)?.button;
     if (token) token.setAttribute('data-answered', correct ? 'correct' : 'incorrect');
 
-    // Show the verdict immediately; persistence resolves into the same card.
-    const loaded = await loadProfile(this.host.storage);
-    if (!loaded.ok) {
+    const recorded = await this.host.recordAnswer({
+      interactionId,
+      conceptId: trap.conceptId,
+      difficulty: trap.difficulty,
+      correct,
+      assisted: true,
+      mode: 'context-choice',
+      contextFingerprint: await createContextFingerprint(trap.conceptId, trap.sentence),
+      display: {
+        targetSurface: trap.targetSurface,
+        englishMeaning: trap.acceptedChoice,
+        kind: learningItemKind(trap),
+      },
+    });
+
+    if (!recorded.ok) {
       this.overlay.set({
         kind: 'result',
         result: {
@@ -543,66 +562,13 @@ export class ContentSession {
           previousPhase: 'new_moon',
           phase: 'new_moon',
           persist: 'error',
-          persistMessage: loaded.error.message,
+          persistMessage: recorded.error.message,
           reviewNote: null,
         },
       });
-      return loaded;
+      return recorded;
     }
 
-    const profile = loaded.data.profile;
-    const alreadyRecorded =
-      state.answered.has(trapId) || (await hasInteraction(this.host.storage, interactionId));
-
-    if (alreadyRecorded) {
-      // A replayed answer shows the same card and changes nothing.
-      const existing = profile.mastery[trap.conceptId];
-      this.overlay.set({
-        kind: 'result',
-        result: {
-          trap,
-          interactionId,
-          selected: choice,
-          correct,
-          previousPhase: existing?.phase ?? 'new_moon',
-          phase: existing?.phase ?? 'new_moon',
-          persist: 'saved',
-          persistMessage: null,
-          reviewNote: reviewNoteFor(profile, trap, correct),
-        },
-      });
-      return success(undefined);
-    }
-
-    const updated = recordAnswer({
-      profile,
-      interactionId,
-      conceptId: trap.conceptId,
-      difficulty: trap.difficulty,
-      correct,
-      now: new Date(),
-    });
-
-    const saved = await saveProfile(this.host.storage, updated.profile);
-    if (!saved.ok) {
-      this.overlay.set({
-        kind: 'result',
-        result: {
-          trap,
-          interactionId,
-          selected: choice,
-          correct,
-          previousPhase: updated.previousPhase,
-          phase: updated.phase,
-          persist: 'error',
-          persistMessage: saved.error.message,
-          reviewNote: null,
-        },
-      });
-      return saved;
-    }
-
-    await rememberInteraction(this.host.storage, interactionId);
     state.answered.add(trapId);
 
     this.overlay.set({
@@ -612,11 +578,11 @@ export class ContentSession {
         interactionId,
         selected: choice,
         correct,
-        previousPhase: updated.previousPhase,
-        phase: updated.phase,
+        previousPhase: recorded.data.previousPhase,
+        phase: recorded.data.phase,
         persist: 'saved',
         persistMessage: null,
-        reviewNote: reviewNoteFor(updated.profile, trap, correct),
+        reviewNote: reviewNoteFor(recorded.data.mastery, correct),
       },
     });
 
@@ -625,14 +591,11 @@ export class ContentSession {
 }
 
 /** Truth Card state 4: say plainly when this concept comes back. */
-function reviewNoteFor(profile: LearnerProfile, trap: ContextTrap, correct: boolean): string {
-  const mastery = profile.mastery[trap.conceptId];
-  if (!mastery) return 'Progress saved.';
-
+function reviewNoteFor(mastery: ConceptMastery, correct: boolean): string {
   if (mastery.due.kind === 'next_occurrence') {
     return correct
-      ? 'Saved. This one comes back at its next appearance.'
-      : 'Saved. This one comes back the next time it appears on any page.';
+      ? 'Saved. This one is ready for another retrieval.'
+      : 'Saved. It is ready in Vocab practice and will return on a later day.';
   }
 
   if (mastery.due.kind === 'timestamp') {
@@ -641,7 +604,7 @@ function reviewNoteFor(profile: LearnerProfile, trap: ContextTrap, correct: bool
     return `Saved. Review scheduled in ${days} ${days === 1 ? 'day' : 'days'}.`;
   }
 
-  return 'Saved. Nothing owed on this one.';
+  return 'Saved. Review will begin from the Vocabulary deck.';
 }
 
 /** Exported for tests: is this concept currently asking to be shown? */

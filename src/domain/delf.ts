@@ -35,12 +35,12 @@ export const DELF_LEVEL_COPY: Readonly<
   },
 } as const;
 
-/** Difficulty windows intentionally overlap at level boundaries. */
+/** Difficulty windows aligned with non-overlapping CEFR / DELF levels. */
 export const DELF_DIFFICULTY_RANGE: Readonly<Record<DelfLevel, readonly [number, number]>> = {
-  A1: [0, 0.45],
-  A2: [0.3, 0.6],
-  B1: [0.35, 0.8],
-  B2: [0.55, 1],
+  A1: [0, 0.29],
+  A2: [0.3, 0.49],
+  B1: [0.5, 0.69],
+  B2: [0.7, 1],
 } as const;
 
 export function abilityForDelfLevel(level: DelfLevel): number {

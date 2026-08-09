@@ -17,16 +17,16 @@ function loadVoices(): SpeechSynthesisVoice[] {
 }
 
 if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-  // Chrome loads voices asynchronously; this fires once they're ready.
+  // Chrome loads voices asynchronously; this fires once they are ready.
   window.speechSynthesis.onvoiceschanged = loadVoices;
   loadVoices();
 }
 
 function pickFrenchVoice(): SpeechSynthesisVoice | undefined {
-  const french = loadVoices().filter((voice) => voice.lang.toLowerCase().startsWith('fr'));
+  const french = loadVoices().filter((voice) => voice.lang.toLocaleLowerCase().startsWith('fr'));
   if (french.length === 0) return undefined;
 
-  const france = french.filter((voice) => voice.lang.toLowerCase() === 'fr-fr');
+  const france = french.filter((voice) => voice.lang.toLocaleLowerCase() === 'fr-fr');
   const pool = france.length > 0 ? france : french;
   return pool.find((voice) => voice.localService) ?? pool[0];
 }
@@ -34,7 +34,8 @@ function pickFrenchVoice(): SpeechSynthesisVoice | undefined {
 export function speakFrench(text: string): void {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
 
-  window.speechSynthesis.cancel(); // don't let utterances stack on repeated clicks
+  // Do not stack utterances when the learner presses Listen repeatedly.
+  window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = 'fr-FR';
   utterance.rate = 0.95;

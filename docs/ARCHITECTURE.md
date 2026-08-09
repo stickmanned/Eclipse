@@ -6,7 +6,9 @@
 ┌──────────────┐   START_SESSION / STOP_SESSION   ┌────────────────────┐
 │    Popup     │ ───────────────────────────────▶ │  Background worker │
 │  (React)     │ ◀─────────── GET_STATUS ───────  │  (service worker)  │
-└──────────────┘                                  └─────────┬──────────┘
+└──────┬───────┘                                  └─────────┬──────────┘
+       │  RECORD_ANSWER (typed practice)                     │
+       └────────────────────────────────────────────────────▶│
        │                                                    │
        │  SAVE_CALIBRATION / RESET_PROFILE                  │  PING
        └────────────────────────────────────────────────────┤  scripting.executeScript
@@ -21,8 +23,11 @@
                                               │  selection scoring         │
                                               │  DOM ownership + restore   │
                                               │  ShadowRoot challenge UI   │
-                                              │  answer persistence  ◀──── the only writer
+                                              │  contextual answers       │
                                               └────────────┬───────────────┘
+                                                           │ RECORD_ANSWER
+                                                           ▼
+                                              background serialized writer
                                                            │
                                                            ▼
                                                  chrome.storage.local
@@ -35,19 +40,19 @@ Three rules, and most of the concurrency problems in an extension of this shape 
 
 ### The background worker owns coordination
 
-Popup requests, tab validation, the single active session, runtime injection, session replacement across tabs, and the always-on loopback provider network call.
+Popup requests, tab validation, the single active session, runtime injection, session replacement across tabs, the always-on loopback provider network call, and answer persistence.
 
-It holds session state in `chrome.storage.session`, so a service-worker restart does not lose track of which tab is running Eclipse, and closing the browser clears it.
+It holds session state in `chrome.storage.session`, so a service-worker restart does not lose track of which tab is running Eclipse, and closing the browser clears it. Contextual and practice answers both enter one serialized `RECORD_ANSWER` queue; profile loading, duplicate suppression, mastery folding, validation, and interaction logging all happen behind that seam.
 
-### The content script owns the page — and answer outcomes
+### The content script owns the page
 
-Article analysis, trap selection, every DOM mutation, restoration, challenge interaction, and writing answers to the learner profile.
+Article analysis, trap selection, every DOM mutation, restoration, and contextual challenge interaction.
 
-**Answer outcomes have exactly one writer.** This is the single most load-bearing decision in the design. If the popup and the worker could also write mastery, then a duplicate answer message, a session replacement mid-answer, and a popup refresh would all be racing the same record. With one writer, the only remaining hazard is a duplicated message to that writer — and that is handled by `interactionId` idempotency, which is a much smaller problem.
+**Answer outcomes have exactly one writer.** This is the single most load-bearing decision in the design. The content runtime and popup can both originate answers, but neither mutates the profile. If each surface wrote mastery directly, a duplicate message, session replacement, practice answer, and popup refresh could race the same record. The background queue leaves only duplicated messages, handled by persisted `interactionId` idempotency.
 
 ### The popup owns presentation
 
-It reads status and sends intents. It never writes learner history. DELF setup is the interesting case: the diagnostic or direct selection produces a level and starting `globalAbility`, so it routes through `SAVE_CALIBRATION` rather than reaching into storage. That message exists specifically to keep this boundary intact.
+It reads status and sends intents. Its French-to-English typed practice sends `RECORD_ANSWER`; it never reaches into storage. DELF setup similarly routes through `SAVE_CALIBRATION` rather than mutating the profile.
 
 ## Why Eclipse needs no article host permissions
 
@@ -123,9 +128,15 @@ conceptScore  += 0.6 · delta          clamped −2 … 2
 globalAbility += 0.1 · delta          clamped −1 … 1
 ```
 
-Moon phases are thresholds on `conceptScore`, with one extra condition: **full** requires 1.25+ _and_ at least three attempts _and_ at least two correct. A high score without the evidence behind it reports **half**. One lucky guess never fills the moon.
+The score still tunes article selection, but it no longer defines mastery. Attempted concepts have exactly three learner-facing phases:
 
-The review ladder is 1 day → 3 days → 7 days. The current rung is **derived, not stored**: `ConceptMastery` records when it was scheduled (`updatedAt`) and when it comes back (`due.at`), and the gap between them is the interval that was last granted. That keeps the persisted shape exactly as specified with no hidden bookkeeping field.
+- **Crescent — Learning:** the first contextual answer, correct or wrong.
+- **Half Moon — Building:** at least one correct typed French-to-English practice.
+- **Full Moon — Mastered:** three correct typed French-to-English practices in total.
+
+Contextual multiple choice is marked `assisted`, so it can introduce and reinforce a word but cannot promote it. Typed successes are monotonic: a miss schedules one correction but does not remove an earned success. The UI displays the exact count out of three, never a percentage. Privacy-preserving context fingerprints remain available for selection; raw article sentences and URLs are not stored.
+
+Scheduling is owned by the exact-pinned `ts-fsrs` package with a 0.90 desired-retention policy and a 365-day cap, but it no longer defines the visible moon. Every first answer is still scheduled and incorrect answers enter a same-session correction state. Full Moon is terminal for **Practice weakest**: due dates never dim or re-enqueue it. Schema-v1 Half/Full records are seeded with the minimum matching typed-practice count so an upgrade cannot erase visible mastery.
 
 ## Storage
 

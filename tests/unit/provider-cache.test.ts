@@ -41,6 +41,8 @@ describe('cache keys', () => {
         generatedTrap({
           sentence: secret,
           exactSourceText: 'currently',
+          choices: ['currently', 'previously', 'eventually'],
+          acceptedChoice: 'currently',
           clueSpan: 'reopen next Monday',
         }),
       ],

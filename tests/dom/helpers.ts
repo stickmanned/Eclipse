@@ -4,6 +4,7 @@ import { memoryArea, type StorageArea } from '@/storage/area';
 import { ContentSession, type SessionHost } from '@/content/session';
 import type { OverlayStore } from '@/content/overlay-store';
 import type { OverlayCallbacks } from '@/content/session';
+import { persistAnswer } from '@/storage/profile-store';
 
 // Resolved from the project root rather than `import.meta.url`: under happy-dom
 // the global URL is the DOM one, which refuses a file: scheme.
@@ -44,6 +45,20 @@ export function testHost(storage: StorageArea = memoryArea()): TestHost {
     mounts,
     styleInstalls: 0,
     invalidations: 0,
+    async recordAnswer(answer: Parameters<SessionHost['recordAnswer']>[0]) {
+      const result = await persistAnswer(storage, { ...answer, now: new Date() });
+      if (!result.ok) return result;
+      return {
+        ok: true as const,
+        data: {
+          interactionId: answer.interactionId,
+          applied: result.data.applied,
+          previousPhase: result.data.previousPhase,
+          phase: result.data.phase,
+          mastery: result.data.mastery,
+        },
+      };
+    },
     mountOverlay(store: OverlayStore, callbacks: OverlayCallbacks) {
       mounts.push({ store, callbacks });
       return () => {

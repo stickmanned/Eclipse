@@ -1,53 +1,92 @@
 /**
- * When a concept comes back.
+ * Eclipse's local FSRS scheduling adapter.
  *
- * - Answer it wrong and it becomes due at its next eligible occurrence, on any
- *   page, immediately.
- * - Answer it right while it was due and it moves onto the review ladder:
- *   one day, then three, then seven, then seven from there on.
- * - Answer it wrong again at any rung and it drops back to next-occurrence.
- *
- * The current rung is derived rather than stored. `ConceptMastery` records
- * `updatedAt` (when it was scheduled) and `due.at` (when it comes back), and
- * the gap between them is the interval that was last granted. That keeps the
- * persisted shape exactly as specified with no hidden bookkeeping field.
+ * The pinned library owns memory difficulty, stability, retrievability, and
+ * interval selection. Eclipse owns two policies around it: an incorrect answer
+ * is immediately available in the correction queue, and an early voluntary
+ * correct answer is recorded but does not advance the card.
  */
 
-import type { ConceptMastery, DueState } from './profile';
+import { createEmptyCard, fsrs, Rating, type Card, type CardInput, type Grade } from 'ts-fsrs';
+import type { ConceptMastery, DueState, FsrsCardState, SchedulerRating } from './profile';
 
 export const MS_PER_DAY = 86_400_000;
+export const FSRS_DESIRED_RETENTION = 0.9;
+export const MAX_REVIEW_INTERVAL_DAYS = 365;
 
-/** Review intervals in days, in order. */
-export const REVIEW_LADDER = [1, 3, 7] as const;
-
-/** The rung the ladder stays on once it is reached. */
-export const MAX_REVIEW_INTERVAL_DAYS = 7;
+const scheduler = fsrs({
+  request_retention: FSRS_DESIRED_RETENTION,
+  maximum_interval: MAX_REVIEW_INTERVAL_DAYS,
+  enable_fuzz: false,
+  enable_short_term: false,
+  learning_steps: [],
+  relearning_steps: [],
+});
 
 export function daysToMs(days: number): number {
   return days * MS_PER_DAY;
 }
 
-/**
- * The interval, in days, that produced the concept's current `due` timestamp.
- * Returns 0 when the concept is not on the ladder.
- */
-export function currentIntervalDays(mastery: ConceptMastery): number {
-  if (mastery.due.kind !== 'timestamp') return 0;
-  const scheduledAt = Date.parse(mastery.updatedAt);
-  const dueAt = Date.parse(mastery.due.at);
-  if (Number.isNaN(scheduledAt) || Number.isNaN(dueAt)) return 0;
-  const days = (dueAt - scheduledAt) / MS_PER_DAY;
-  if (days <= 0) return 0;
-  return days;
+export function serializeFsrsCard(card: Card): FsrsCardState {
+  return {
+    due: card.due.toISOString(),
+    stability: card.stability,
+    difficulty: card.difficulty,
+    elapsedDays: card.elapsed_days,
+    scheduledDays: card.scheduled_days,
+    learningSteps: card.learning_steps,
+    reps: card.reps,
+    lapses: card.lapses,
+    state: card.state,
+    lastReview: card.last_review?.toISOString(),
+  };
 }
 
-/** The next rung up from `previousDays`. */
-export function nextIntervalDays(previousDays: number): number {
-  for (const rung of REVIEW_LADDER) {
-    // A little tolerance so clock skew or a rounded timestamp cannot skip a rung.
-    if (previousDays < rung - 0.01) return rung;
-  }
-  return MAX_REVIEW_INTERVAL_DAYS;
+function deserializeFsrsCard(card: FsrsCardState): CardInput {
+  return {
+    due: card.due,
+    stability: card.stability,
+    difficulty: card.difficulty,
+    elapsed_days: card.elapsedDays,
+    scheduled_days: card.scheduledDays,
+    learning_steps: card.learningSteps,
+    reps: card.reps,
+    lapses: card.lapses,
+    state: card.state,
+    last_review: card.lastReview,
+  };
+}
+
+export function emptyFsrsCard(now: Date): FsrsCardState {
+  return serializeFsrsCard(createEmptyCard(now));
+}
+
+/** Build a conservative reviewed card while migrating aggregate v1 history. */
+export function migratedFsrsCard(
+  updatedAt: Date,
+  due: DueState,
+  intervalDays: number,
+  attempts: number,
+  lapses: number,
+): FsrsCardState {
+  const card = emptyFsrsCard(updatedAt);
+  return {
+    ...card,
+    due:
+      due.kind === 'timestamp'
+        ? due.at
+        : new Date(updatedAt.getTime() + Math.max(1, intervalDays) * MS_PER_DAY).toISOString(),
+    stability: intervalDays,
+    scheduledDays: intervalDays,
+    reps: attempts,
+    lapses,
+    state: attempts > 0 ? 2 : 0,
+    lastReview: attempts > 0 ? updatedAt.toISOString() : undefined,
+  };
+}
+
+export function currentIntervalDays(mastery: ConceptMastery): number {
+  return mastery.intervalDays;
 }
 
 /** True when the concept is asking to be shown again. */
@@ -58,50 +97,78 @@ export function isDue(mastery: ConceptMastery | undefined, now: Date): boolean {
   return false;
 }
 
-/**
- * Selection weight for a due concept.
- *
- * `next_occurrence` is the strongest signal (the learner got it wrong and has
- * not yet fixed it). A timestamped review is strong once it is overdue and
- * fades the further in the future it sits, reaching zero a full ladder-length
- * away.
- */
-export const DUE_PRIORITY_NEXT_OCCURRENCE = 1;
-export const DUE_PRIORITY_OVERDUE = 0.8;
-const DUE_HORIZON_DAYS = 7;
-
-export function duePriority(mastery: ConceptMastery | undefined, now: Date): number {
-  if (!mastery) return 0;
-  if (mastery.due.kind === 'none') return 0;
-  if (mastery.due.kind === 'next_occurrence') return DUE_PRIORITY_NEXT_OCCURRENCE;
-
-  const dueAt = Date.parse(mastery.due.at);
-  if (Number.isNaN(dueAt)) return 0;
-  const daysUntil = (dueAt - now.getTime()) / MS_PER_DAY;
-  if (daysUntil <= 0) return DUE_PRIORITY_OVERDUE;
-  return Math.max(0, DUE_PRIORITY_OVERDUE * (1 - daysUntil / DUE_HORIZON_DAYS));
+export function retrievabilityOf(mastery: ConceptMastery | undefined, now: Date): number {
+  if (!mastery || mastery.fsrsCard.reps === 0) return 0;
+  return scheduler.get_retrievability(deserializeFsrsCard(mastery.fsrsCard), now, false);
 }
 
-/**
- * The `due` state a concept takes after an answer.
- *
- * `wasDue` distinguishes "correct while under review" (advance the ladder)
- * from "correct on a concept that was not being reviewed" (nothing owed).
- */
-export function nextDueState(
+/** Selection weight for an item that is actually due now. */
+export const DUE_PRIORITY_NEXT_OCCURRENCE = 1;
+export const DUE_PRIORITY_OVERDUE = 0.8;
+
+export function duePriority(mastery: ConceptMastery | undefined, now: Date): number {
+  if (!mastery || !isDue(mastery, now)) return 0;
+  if (mastery.due.kind === 'next_occurrence') return DUE_PRIORITY_NEXT_OCCURRENCE;
+  const retrievability = retrievabilityOf(mastery, now);
+  return Math.min(0.95, DUE_PRIORITY_OVERDUE + Math.max(0, 0.9 - retrievability));
+}
+
+export interface ScheduleDecision {
+  readonly due: DueState;
+  readonly intervalDays: number;
+  readonly fsrsCard: FsrsCardState;
+  readonly creditedRecall: boolean;
+  readonly scheduled: boolean;
+  readonly rating: SchedulerRating;
+}
+
+function outcomeRating(
+  correct: boolean,
+  assisted: boolean,
+): {
+  grade: Grade;
+  label: SchedulerRating;
+} {
+  if (!correct) return { grade: Rating.Again, label: 'again' };
+  if (assisted) return { grade: Rating.Hard, label: 'hard' };
+  return { grade: Rating.Good, label: 'good' };
+}
+
+/** Apply one objective answer to the scheduler. */
+export function scheduleAnswer(
   previous: ConceptMastery | undefined,
   correct: boolean,
-  wasDue: boolean,
+  assisted: boolean,
   now: Date,
-): DueState {
-  if (!correct) return { kind: 'next_occurrence' };
+): ScheduleDecision {
+  const rating = outcomeRating(correct, assisted);
+  const scheduled = !previous || previous.due.kind === 'none' || isDue(previous, now);
 
-  if (!wasDue) {
-    // Answered correctly without owing a review: clear any outstanding debt.
-    return { kind: 'none' };
+  // Early correct practice is useful feedback but not evidence for a longer
+  // interval. Early failure is real evidence and must enter relearning.
+  if (previous && correct && !scheduled) {
+    return {
+      due: previous.due,
+      intervalDays: previous.intervalDays,
+      fsrsCard: previous.fsrsCard,
+      creditedRecall: false,
+      scheduled: false,
+      rating: rating.label,
+    };
   }
 
-  const previousDays = previous ? currentIntervalDays(previous) : 0;
-  const days = nextIntervalDays(previousDays);
-  return { kind: 'timestamp', at: new Date(now.getTime() + daysToMs(days)).toISOString() };
+  const card = previous
+    ? deserializeFsrsCard(previous.fsrsCard)
+    : deserializeFsrsCard(emptyFsrsCard(now));
+  const next = scheduler.next(card, now, rating.grade).card;
+  const fsrsCard = serializeFsrsCard(next);
+
+  return {
+    due: correct ? { kind: 'timestamp', at: fsrsCard.due } : { kind: 'next_occurrence' },
+    intervalDays: fsrsCard.scheduledDays,
+    fsrsCard,
+    creditedRecall: correct && !assisted && scheduled,
+    scheduled,
+    rating: rating.label,
+  };
 }

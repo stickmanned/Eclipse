@@ -14,13 +14,20 @@
 
 import {
   createEmptyProfile,
+  dueStateSchema,
   learnerProfileSchema,
+  MOON_PHASES,
   PROFILE_SCHEMA_VERSION,
   type LearnerProfile,
 } from '../domain/profile';
+import { recordAnswer, type RecordAnswerInput, type RecordAnswerResult } from '../domain/mastery';
 import { failure, success, type Result } from '../domain/errors';
 import { guarded, type StorageArea } from './area';
 import { INTERACTIONS_KEY, PROFILE_KEY } from './keys';
+import { MAX_REVIEW_INTERVAL_DAYS, MS_PER_DAY, migratedFsrsCard } from '../domain/scheduling';
+import { DELF_LEVELS } from '../domain/delf';
+import { CONCEPT_ID_PATTERN } from '../domain/trap';
+import { z } from 'zod';
 
 /** How many interaction ids to remember for duplicate suppression. */
 export const INTERACTION_LOG_LIMIT = 200;
@@ -29,6 +36,131 @@ export interface LoadProfileResult {
   readonly profile: LearnerProfile;
   /** True when nothing was stored yet and a fresh profile was returned. */
   readonly created: boolean;
+  /** True when a compatible older profile was upgraded in memory. */
+  readonly migrated: boolean;
+}
+
+const legacyIsoDate = z.string().refine((value) => !Number.isNaN(Date.parse(value)));
+const legacyDisplaySchema = z
+  .object({
+    targetSurface: z.string().trim().min(1).max(120),
+    englishMeaning: z.string().trim().min(1).max(240),
+    kind: z.enum(['word', 'phrase']),
+  })
+  .optional();
+const learnerProfileSchemaV1 = z.object({
+  schemaVersion: z.literal(1),
+  sourceLocale: z.literal('en'),
+  targetLocale: z.literal('fr-FR'),
+  calibrationCompleted: z.boolean(),
+  delfLevel: z.enum(DELF_LEVELS).default('B1'),
+  globalAbility: z.number().min(-1).max(1),
+  mastery: z.record(
+    z.string().regex(CONCEPT_ID_PATTERN),
+    z.object({
+      score: z.number().min(-2).max(2),
+      phase: z.enum(MOON_PHASES),
+      attempts: z.number().int().min(0),
+      correct: z.number().int().min(0),
+      due: dueStateSchema,
+      updatedAt: legacyIsoDate,
+      display: legacyDisplaySchema,
+    }),
+  ),
+  recentOutcomes: z.array(
+    z.object({
+      interactionId: z.string().min(1).max(120),
+      conceptId: z.string().regex(CONCEPT_ID_PATTERN),
+      correct: z.boolean(),
+      at: legacyIsoDate,
+    }),
+  ),
+});
+
+function migrateProfileV1(raw: z.infer<typeof learnerProfileSchemaV1>): LearnerProfile {
+  const mastery = Object.fromEntries(
+    Object.entries(raw.mastery).map(([conceptId, legacy]) => {
+      let intervalDays = 0;
+      let due = legacy.due;
+
+      if (legacy.due.kind === 'timestamp') {
+        const scheduledAt = Date.parse(legacy.updatedAt);
+        const dueAt = Date.parse(legacy.due.at);
+        intervalDays = Math.min(
+          MAX_REVIEW_INTERVAL_DAYS,
+          Math.max(0, Math.round((dueAt - scheduledAt) / MS_PER_DAY)),
+        );
+      } else if (legacy.due.kind === 'none' && legacy.attempts > 0 && legacy.correct > 0) {
+        // v1 accidentally stopped scheduling a first correct answer. Put it on
+        // the first rung, anchored to its original answer rather than load time.
+        intervalDays = 1;
+        due = {
+          kind: 'timestamp' as const,
+          at: new Date(Date.parse(legacy.updatedAt) + MS_PER_DAY).toISOString(),
+        };
+      }
+
+      const lapses = Math.max(0, legacy.attempts - legacy.correct);
+      const updatedAt = new Date(legacy.updatedAt);
+
+      return [
+        conceptId,
+        {
+          score: legacy.score,
+          phase: legacy.phase === 'new_moon' ? 'crescent' : legacy.phase,
+          attempts: legacy.attempts,
+          correct: legacy.correct,
+          intervalDays,
+          unassistedCorrect: legacy.phase === 'full' ? 3 : legacy.phase === 'half' ? 1 : 0,
+          lapses,
+          fsrsCard: migratedFsrsCard(updatedAt, due, intervalDays, legacy.attempts, lapses),
+          firstAnsweredAt: legacy.updatedAt,
+          successfulReviewDays: [],
+          contextFingerprints: [],
+          reviewEvents: [],
+          legacyPhase: undefined,
+          due,
+          updatedAt: legacy.updatedAt,
+          display: legacy.display,
+        },
+      ];
+    }),
+  );
+
+  return {
+    schemaVersion: PROFILE_SCHEMA_VERSION,
+    sourceLocale: 'en',
+    targetLocale: 'fr-FR',
+    calibrationCompleted: raw.calibrationCompleted,
+    delfLevel: raw.delfLevel,
+    globalAbility: raw.globalAbility,
+    mastery,
+    recentOutcomes: raw.recentOutcomes.slice(-5).map((outcome) => ({
+      ...outcome,
+      conceptId: outcome.conceptId as `fr:${string}`,
+    })),
+  };
+}
+
+/** Seed v2 profiles produced by the older legacy-label migration. */
+function seedLegacyPracticeCounts(profile: LearnerProfile): LearnerProfile | null {
+  let migrated = false;
+  const mastery = Object.fromEntries(
+    Object.entries(profile.mastery).map(([conceptId, record]) => {
+      if (!record.legacyPhase) return [conceptId, record];
+      migrated = true;
+      const minimum = record.phase === 'full' ? 3 : record.phase === 'half' ? 1 : 0;
+      return [
+        conceptId,
+        {
+          ...record,
+          unassistedCorrect: Math.max(record.unassistedCorrect, minimum),
+          legacyPhase: undefined,
+        },
+      ];
+    }),
+  );
+  return migrated ? { ...profile, mastery } : null;
 }
 
 /**
@@ -43,7 +175,7 @@ export async function loadProfile(area: StorageArea): Promise<Result<LoadProfile
 
   const raw = read.data;
   if (raw === undefined || raw === null) {
-    return success({ profile: createEmptyProfile(), created: true });
+    return success({ profile: createEmptyProfile(), created: true, migrated: false });
   }
 
   const version = (raw as { schemaVersion?: unknown }).schemaVersion;
@@ -54,6 +186,20 @@ export async function loadProfile(area: StorageArea): Promise<Result<LoadProfile
     );
   }
 
+  if (version === 1) {
+    const legacy = learnerProfileSchemaV1.safeParse(raw);
+    if (!legacy.success) {
+      return failure(
+        'PROFILE_INCOMPATIBLE',
+        'Saved learning data did not match the expected shape and was left untouched.',
+      );
+    }
+    const profile = migrateProfileV1(legacy.data);
+    const written = await guarded(() => area.set(PROFILE_KEY, profile));
+    if (!written.ok) return written;
+    return success({ profile, created: false, migrated: true });
+  }
+
   const parsed = learnerProfileSchema.safeParse(raw);
   if (!parsed.success) {
     return failure(
@@ -62,7 +208,15 @@ export async function loadProfile(area: StorageArea): Promise<Result<LoadProfile
     );
   }
 
-  return success({ profile: parsed.data as LearnerProfile, created: false });
+  const profile = parsed.data as LearnerProfile;
+  const migrated = seedLegacyPracticeCounts(profile);
+  if (migrated) {
+    const written = await guarded(() => area.set(PROFILE_KEY, migrated));
+    if (!written.ok) return written;
+    return success({ profile: migrated, created: false, migrated: true });
+  }
+
+  return success({ profile, created: false, migrated: false });
 }
 
 /** Write the profile, validating it on the way out. */
@@ -78,6 +232,43 @@ export async function saveProfile(
   const written = await guarded(() => area.set(PROFILE_KEY, parsed.data));
   if (!written.ok) return written;
   return success(profile);
+}
+
+/**
+ * The durable answer-write seam shared by contextual and popup practice.
+ * Callers provide one answer; profile loading, duplicate suppression, mastery
+ * folding, validation, and interaction logging stay local to this module.
+ */
+export async function persistAnswer(
+  area: StorageArea,
+  input: Omit<RecordAnswerInput, 'profile'>,
+): Promise<Result<RecordAnswerResult>> {
+  const loaded = await loadProfile(area);
+  if (!loaded.ok) return loaded;
+
+  const profile = loaded.data.profile;
+  const existing = profile.mastery[input.conceptId];
+  if (await hasInteraction(area, input.interactionId)) {
+    if (!existing) {
+      return failure('STORAGE_ERROR', 'The recorded answer no longer has a mastery record.');
+    }
+    return success({
+      profile,
+      mastery: existing,
+      previousPhase: existing.phase,
+      phase: existing.phase,
+      predictedCorrect: 0,
+      applied: false,
+    });
+  }
+
+  const updated = recordAnswer({ ...input, profile });
+  const saved = await saveProfile(area, updated.profile);
+  if (!saved.ok) return saved;
+
+  const remembered = await rememberInteraction(area, input.interactionId);
+  if (!remembered.ok) return remembered;
+  return success(updated);
 }
 
 /** Remove the profile and every interaction id. The next read creates a fresh profile. */

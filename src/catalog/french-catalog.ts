@@ -37,7 +37,7 @@ export const FRENCH_CATALOG: readonly CatalogEntry[] = [
       'attendre is to wait — to stay put until something arrives. The English verb it resembles, attend, is a different word entirely.',
     distractorExplanation:
       'hope is the tempting miss, because both verbs describe waiting on something you want. But hope is espérer, an inner state; attendre needs a thing you are waiting for, and the clue names it.',
-    difficulty: 0.35,
+    difficulty: 0.5,
     contextQuality: 0.95,
   }),
 
@@ -60,7 +60,7 @@ export const FRENCH_CATALOG: readonly CatalogEntry[] = [
       'actuellement means currently, at this moment. It is about the present, not about correcting a misunderstanding.',
     distractorExplanation:
       'actually is the classic false friend — the two words look identical. But actually corrects something, and nothing here is being corrected: the sentence is fixing a moment in time, which is what the clue does.',
-    difficulty: 0.45,
+    difficulty: 0.5,
     contextQuality: 0.95,
   }),
 
@@ -172,7 +172,7 @@ export const FRENCH_CATALOG: readonly CatalogEntry[] = [
       'l’école names the institution and the building together. Note the apostrophe: le becomes l’ before a vowel.',
     distractorExplanation:
       'the schooling is close enough to be tempting, but that abstract sense is la scolarité. The clue points at a physical place with people in it, not at an education as a process.',
-    difficulty: 0.4,
+    difficulty: 0.25,
     contextQuality: 0.85,
   }),
 
@@ -239,6 +239,99 @@ export const FRENCH_CATALOG: readonly CatalogEntry[] = [
     distractorExplanation:
       'blessed is the false friend, and it points the opposite way — one is harm, the other is grace. The clue puts the person in a medical situation.',
     difficulty: 0.45,
+    contextQuality: 0.9,
+  }),
+
+  entry({
+    conceptId: 'fr:deception:disappointment',
+    type: 'false_friend',
+    targetSurface: 'déception',
+    exactSourceText: 'disappointment',
+    choices: ['disappointment', 'trickery', 'disgrace'],
+    acceptedChoice: 'disappointment',
+    clueCandidates: ['after losing the final', 'the result was a heavy', 'brought a sense of'],
+    explanation:
+      'déception means disappointment — a feeling of letdown. Deception in French is tromperie.',
+    distractorExplanation:
+      'deception is the classic false friend. But déception is about feeling disappointed, not about lying or cheating.',
+    difficulty: 0.6,
+    contextQuality: 0.95,
+  }),
+
+  entry({
+    conceptId: 'fr:eventuellement:possibly',
+    type: 'false_friend',
+    targetSurface: 'éventuellement',
+    exactSourceText: 'possibly',
+    choices: ['possibly', 'eventually', 'definitely'],
+    acceptedChoice: 'possibly',
+    clueCandidates: ['if time allows', 'we could', 'if necessary'],
+    explanation:
+      'éventuellement means possibly or potentially if circumstances allow. Eventually is finalement.',
+    distractorExplanation:
+      'eventually is the trap set by spelling similarity. But éventuellement expresses possibility, not certainty over time.',
+    difficulty: 0.65,
+    contextQuality: 0.92,
+  }),
+
+  entry({
+    conceptId: 'fr:dailleurs:besides',
+    type: 'phrase',
+    targetSurface: 'd’ailleurs',
+    exactSourceText: 'besides',
+    choices: ['besides', 'elsewhere', 'moreover'],
+    acceptedChoice: 'besides',
+    clueCandidates: ['in addition', 'as a matter of fact', 'he mentioned'],
+    explanation:
+      'd’ailleurs means besides, moreover, or for that matter. It connects arguments or adds a relevant side note.',
+    distractorExplanation:
+      'elsewhere is the literal translation of ailleurs. But d’ailleurs functions as a logical connector.',
+    difficulty: 0.55,
+    contextQuality: 0.9,
+  }),
+
+  entry({
+    conceptId: 'fr:en-fait:in-fact',
+    type: 'phrase',
+    targetSurface: 'en fait',
+    exactSourceText: 'in fact',
+    choices: ['in fact', 'by effect', 'in short'],
+    acceptedChoice: 'in fact',
+    clueCandidates: ['the truth is', 'contrary to expectations', 'as it turns out'],
+    explanation: 'en fait means in fact or actually, clarifying what really happened.',
+    distractorExplanation: 'by effect confuses fait (fact) with effet (effect).',
+    difficulty: 0.52,
+    contextQuality: 0.92,
+  }),
+
+  entry({
+    conceptId: 'fr:resumer:summarize',
+    type: 'false_friend',
+    targetSurface: 'résumer',
+    exactSourceText: 'summarize',
+    choices: ['summarize', 'resume', 'restart'],
+    acceptedChoice: 'summarize',
+    clueCandidates: ['the main points', 'in a few words', 'the report'],
+    explanation: 'résumer is to summarize or sum up. To resume an activity is reprendre.',
+    distractorExplanation:
+      'resume is the false friend. But résumer condenses text or ideas into a summary.',
+    difficulty: 0.56,
+    contextQuality: 0.9,
+  }),
+
+  entry({
+    conceptId: 'fr:quitte-a:even-if-it-means',
+    type: 'phrase',
+    targetSurface: 'quitte à',
+    exactSourceText: 'even if it means',
+    choices: ['even if it means', 'leaving behind', 'as long as'],
+    acceptedChoice: 'even if it means',
+    clueCandidates: ['working late', 'taking a risk', 'spending extra money'],
+    explanation:
+      'quitte à means even if it involves or at the risk of. It expresses willingness to accept a consequence.',
+    distractorExplanation:
+      'leaving behind takes quitte literally from quitter, but quitte à is a fixed concession connector.',
+    difficulty: 0.75,
     contextQuality: 0.9,
   }),
 ] as const;

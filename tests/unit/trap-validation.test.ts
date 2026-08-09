@@ -137,6 +137,15 @@ describe('choices are English meanings', () => {
     expect(reject({ choices: ['wait', 'espérer', 'hear'] })).toMatch(/choices\.1 is French/i);
   });
 
+  it('anchors a generated correct answer to the original English source text', () => {
+    const result = validateTrap(
+      generatedTrap({ choices: ['hope', 'hear', 'stay'], acceptedChoice: 'hope' }),
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toMatch(/original English exactSourceText/i);
+  });
+
   it('rejects a choice that is the surface with its accents stripped', () => {
     expect(
       reject({

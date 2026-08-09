@@ -10,17 +10,17 @@ import type { MoonPhase } from '../../domain/profile';
 import { COLORS } from './theme';
 
 export const PHASE_LABEL: Readonly<Record<MoonPhase, string>> = {
-  new_moon: 'New moon',
+  new_moon: 'No vocabulary yet',
   crescent: 'Crescent',
   half: 'Half moon',
   full: 'Full moon',
 };
 
 export const PHASE_DESCRIPTION: Readonly<Record<MoonPhase, string>> = {
-  new_moon: 'not met yet',
-  crescent: 'starting to show',
-  half: 'reading it more often than not',
-  full: 'read reliably',
+  new_moon: 'answer a highlighted word to begin',
+  crescent: 'Learning — starting to understand',
+  half: 'Building — 1 of 3 typed practices correct',
+  full: 'Mastered — 3 typed practices correct',
 };
 
 interface MoonProps {

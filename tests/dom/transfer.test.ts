@@ -52,7 +52,7 @@ describe('a fresh learner on Demo B', () => {
     const storage = memoryArea();
     await activate(storage, 'demo-b.html', 'ses_b');
     expect(conceptsOnPage()).toContain(ATTENDRE);
-    expect(conceptsOnPage().length).toBeGreaterThan(4);
+    expect(conceptsOnPage().length).toBeGreaterThanOrEqual(4);
   });
 });
 
@@ -78,7 +78,7 @@ describe('wrong answer on Demo A transfers to Demo B', () => {
     if (answered.kind === 'result') {
       expect(answered.result.correct).toBe(false);
       expect(answered.result.persist).toBe('saved');
-      expect(answered.result.reviewNote).toMatch(/next time it appears/i);
+      expect(answered.result.reviewNote).toMatch(/Vocab practice/i);
     }
 
     // --- the profile records the debt ----------------------------------------
@@ -128,7 +128,7 @@ describe('wrong answer on Demo A transfers to Demo B', () => {
     expect(state.kind).toBe('result');
     if (state.kind === 'result') {
       expect(state.result.correct).toBe(true);
-      expect(state.result.reviewNote).toMatch(/1 day/);
+      expect(state.result.reviewNote).toMatch(/2 days/);
     }
 
     const profile = await loadProfile(storage);

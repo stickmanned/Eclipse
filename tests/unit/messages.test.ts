@@ -45,6 +45,47 @@ describe('parseMessage validation', () => {
     expect(msg).toEqual({ type: 'RESET_PROFILE', confirmed: true });
   });
 
+  it('parses a complete answer-write message', () => {
+    const msg = parseMessage({
+      type: 'RECORD_ANSWER',
+      interactionId: 'int_1',
+      conceptId: 'fr:attendre:wait',
+      difficulty: 0.4,
+      correct: true,
+      assisted: false,
+      mode: 'typed-meaning',
+      contextFingerprint: 'ctx_1',
+      display: {
+        targetSurface: 'attendre',
+        englishMeaning: 'wait',
+        kind: 'word',
+      },
+    });
+    expect(msg).toMatchObject({
+      type: 'RECORD_ANSWER',
+      assisted: false,
+      mode: 'typed-meaning',
+      contextFingerprint: 'ctx_1',
+    });
+  });
+
+  it('rejects an ambiguous answer that omits the assistance mode', () => {
+    expect(
+      parseMessage({
+        type: 'RECORD_ANSWER',
+        interactionId: 'int_1',
+        conceptId: 'fr:attendre:wait',
+        difficulty: 0.4,
+        correct: true,
+        display: {
+          targetSurface: 'attendre',
+          englishMeaning: 'wait',
+          kind: 'word',
+        },
+      }),
+    ).toBeNull();
+  });
+
   it('returns null for unknown message type', () => {
     const msg = parseMessage({ type: 'UNKNOWN_TYPE_123' });
     expect(msg).toBeNull();

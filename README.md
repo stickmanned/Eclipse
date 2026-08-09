@@ -93,9 +93,9 @@ popup  ──START_SESSION──▶  background worker  ──PING / ACTIVATE─
 
 Three ownership rules do most of the work:
 
-- **The background worker** owns tab validation, the single active session, runtime injection, and the AI request.
-- **The content script** owns the DOM, and is the **only** writer of answer outcomes. That single-writer rule removes the popup/background/content race entirely.
-- **The popup** owns presentation and commands. It never writes learner history — even the DELF diagnostic goes through the worker.
+- **The background worker** owns tab validation, the single active session, runtime injection, the AI request, and the serialized learner-history writer.
+- **The content script** owns the article DOM and sends contextual answer outcomes to that writer.
+- **The popup** owns presentation and active-recall practice. Practice answers and the DELF diagnostic also go through the worker, so there is still exactly one durable write seam.
 
 ### Narrow host permissions
 
@@ -129,9 +129,9 @@ conceptScore  += 0.6 · delta          clamped to −2 … 2
 globalAbility += 0.1 · delta          clamped to −1 … 1
 ```
 
-Moon phases: **new moon** below −0.5 or unattempted · **crescent** −0.5 to 0.49 · **half** 0.5 to 1.24 · **full** 1.25+ _with at least three attempts and two correct_. A single lucky guess never fills the moon.
+The Vocabulary deck has three learner phases. Every answered item begins at **Crescent — Learning**. The first correct typed practice moves it to **Half Moon — Building**; the third correct typed practice moves it to **Full Moon — Mastered**. Multiple choice can introduce a word but cannot promote it. Incorrect typed answers enter one same-session correction, but they do not erase successful-practice credit.
 
-Review ladder: wrong → next occurrence · first correct while due → 1 day → 3 days → 7 days. Wrong at any rung drops straight back to next occurrence.
+The deck shows the exact count (`0/3`, `1/3`, `2/3`, `3/3`) rather than a synthetic percentage. Full Moon items leave **Practice weakest** permanently, while a learner can still launch one manually from its row. Review scheduling remains stored separately for future study features and never dims or re-enqueues a Full Moon item.
 
 ---
 

@@ -13,6 +13,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRoot, type Root } from 'react-dom/client';
 import { act } from 'react';
+import type { StatusData } from '@/domain/messages';
 
 const sendMessage = vi.fn();
 const reload = vi.fn();
@@ -28,7 +29,28 @@ const { STALE_WORKER_MESSAGE } = await import('@/domain/errors');
 interface StatusOverrides {
   contractVersion?: number;
   calibrationCompleted?: boolean;
+  vocabulary?: StatusData['vocabulary'];
 }
+
+const trackedVocabulary: StatusData['vocabulary'][number] = {
+  conceptId: 'fr:attendre:wait',
+  targetSurface: 'attendre',
+  englishMeaning: 'wait',
+  kind: 'word',
+  phase: 'crescent',
+  attempts: 2,
+  correct: 1,
+  intervalDays: 0,
+  unassistedCorrect: 0,
+  lapses: 1,
+  stability: 0.2,
+  retrievability: 0.2,
+  successfulReviewDays: [],
+  contextCount: 1,
+  memoryDimmed: false,
+  due: { kind: 'next_occurrence' },
+  updatedAt: '2026-08-08T12:00:00.000Z',
+};
 
 function statusData(overrides: StatusOverrides = {}) {
   return {
@@ -46,9 +68,10 @@ function statusData(overrides: StatusOverrides = {}) {
       attempts: 0,
       correct: 0,
       due: 0,
-      byPhase: { new_moon: 0, crescent: 0, half: 0, full: 0 },
+      byPhase: { crescent: 0, half: 0, full: 0 },
       overallPhase: 'new_moon' as const,
     },
+    vocabulary: [],
     provider: {
       configured: true,
       enabled: true,
@@ -161,6 +184,177 @@ describe('the popup against a worker on the current contract', () => {
     await mount();
     expect(text()).not.toContain(STALE_WORKER_MESSAGE);
     expect(button('Reload Eclipse')).toBeUndefined();
+  });
+
+  it('exposes an accessible four-view tab interface after calibration', async () => {
+    sendMessage.mockImplementation((message: { type: string }) => {
+      if (message.type === 'GET_STATUS') {
+        return Promise.resolve({
+          ok: true,
+          data: statusData({ calibrationCompleted: true }),
+        });
+      }
+      return Promise.resolve({ ok: true, data: {} });
+    });
+
+    await mount();
+    const tabs = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    expect(tabs).toHaveLength(4);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['Session', 'Vocab', 'Stats', 'Settings']);
+    expect(tabs[0]?.getAttribute('aria-selected')).toBe('true');
+
+    await act(async () => {
+      tabs[0]?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+      );
+    });
+    expect(tabs[1]?.getAttribute('aria-selected')).toBe('true');
+    expect(container.querySelector('[role="tabpanel"]')?.getAttribute('aria-labelledby')).toBe(
+      'eclipse-tab-vocabulary',
+    );
+  });
+
+  it('renders tracked vocabulary as French-to-English deck rows', async () => {
+    sendMessage.mockImplementation((message: { type: string }) => {
+      if (message.type === 'GET_STATUS') {
+        return Promise.resolve({
+          ok: true,
+          data: statusData({
+            calibrationCompleted: true,
+            vocabulary: [trackedVocabulary],
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, data: {} });
+    });
+
+    await mount();
+    await click('Vocab');
+
+    expect(text()).toContain('Vocabulary deck');
+    expect(container.querySelector('[lang="fr-FR"]')?.textContent).toBe('attendre');
+    expect(text()).toContain('wait');
+    expect(text()).toContain('Crescent');
+    expect(text()).toContain('Practice now');
+    expect(container.querySelectorAll('.phase-filters button')).toHaveLength(4);
+    expect(text()).not.toContain('New Moon');
+    expect(container.querySelector('.mini-progress')).toBeNull();
+    expect(container.querySelector('.vocabulary-meta')?.textContent).not.toContain('%');
+  });
+
+  it('keeps a long phrase intact in a scrollable phrase surface', async () => {
+    const phrase = {
+      ...trackedVocabulary,
+      conceptId: 'fr:une-seule-commande-pour-installer:one-command-to-install',
+      targetSurface: 'Une seule commande pour installer le système',
+      englishMeaning: 'One command to install the system',
+      kind: 'phrase' as const,
+    };
+    sendMessage.mockImplementation((message: { type: string }) => {
+      if (message.type === 'GET_STATUS') {
+        return Promise.resolve({
+          ok: true,
+          data: statusData({ calibrationCompleted: true, vocabulary: [phrase] }),
+        });
+      }
+      return Promise.resolve({ ok: true, data: {} });
+    });
+
+    await mount();
+    await click('Vocab');
+
+    const surface = container.querySelector<HTMLElement>('.phrase-scroll');
+    expect(surface?.textContent).toBe(phrase.targetSurface);
+    expect(surface?.title).toBe(phrase.targetSurface);
+  });
+
+  it('records typed recall without assistance through the shared writer', async () => {
+    sendMessage.mockImplementation((message: { type: string; interactionId?: string }) => {
+      if (message.type === 'GET_STATUS') {
+        return Promise.resolve({
+          ok: true,
+          data: statusData({ calibrationCompleted: true, vocabulary: [trackedVocabulary] }),
+        });
+      }
+      if (message.type === 'RECORD_ANSWER') {
+        return Promise.resolve({
+          ok: true,
+          data: {
+            interactionId: message.interactionId,
+            applied: true,
+            previousPhase: 'crescent',
+            phase: 'half',
+            mastery: {
+              unassistedCorrect: 1,
+              due: { kind: 'timestamp', at: '2026-08-10T12:00:00.000Z' },
+            },
+          },
+        });
+      }
+      return Promise.resolve({ ok: true, data: {} });
+    });
+
+    await mount();
+    await click('Vocab');
+    await click('Review now');
+    const input = container.querySelector<HTMLInputElement>('.practice-answer input');
+    expect(input).not.toBeNull();
+    await act(async () => {
+      if (!input) return;
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      valueSetter?.call(input, 'to wait');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(button('Check answer')?.disabled).toBe(false);
+    await click('Check answer');
+
+    const answer = sent().find((payload) => payload.type === 'RECORD_ANSWER');
+    expect(answer).toMatchObject({
+      correct: true,
+      assisted: false,
+      mode: 'typed-meaning',
+      conceptId: 'fr:attendre:wait',
+    });
+    expect(parseMessage(answer)).not.toBeNull();
+    expect(text()).toContain('Half Moon');
+  });
+
+  it('puts a missed practice item back at session end for one correction', async () => {
+    sendMessage.mockImplementation((message: { type: string; interactionId?: string }) => {
+      if (message.type === 'GET_STATUS') {
+        return Promise.resolve({
+          ok: true,
+          data: statusData({ calibrationCompleted: true, vocabulary: [trackedVocabulary] }),
+        });
+      }
+      if (message.type === 'RECORD_ANSWER') {
+        return Promise.resolve({
+          ok: true,
+          data: {
+            interactionId: message.interactionId,
+            applied: true,
+            previousPhase: 'crescent',
+            phase: 'crescent',
+            mastery: { due: { kind: 'next_occurrence' } },
+          },
+        });
+      }
+      return Promise.resolve({ ok: true, data: {} });
+    });
+
+    await mount();
+    await click('Vocab');
+    await click('Review now');
+    await click("I don't know");
+
+    expect(sent().find((payload) => payload.type === 'RECORD_ANSWER')).toMatchObject({
+      correct: false,
+      assisted: false,
+    });
+    expect(text()).toContain('queued for relearning');
+    expect(text()).toContain('1 of 2');
+    await click('Next word');
+    expect(text()).toContain('2 of 2');
   });
 });
 

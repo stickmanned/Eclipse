@@ -35,7 +35,7 @@ export function createTrapId(conceptId: string, blockIndex: number, offset: numb
   return `${conceptId}@${blockIndex}:${offset}`;
 }
 
-/** A short, stable, non-cryptographic hash. Used for cache keys only. */
+/** A short, stable, non-cryptographic hash for deterministic local ordering. */
 export function stableHash(value: string): string {
   let h1 = 0x811c9dc5;
   let h2 = 0x01000193;
@@ -47,4 +47,19 @@ export function stableHash(value: string): string {
   const a = (h1 >>> 0).toString(36);
   const b = (h2 >>> 0).toString(36);
   return `${a}${b}`;
+}
+
+/** SHA-256 label for context diversity; the raw sentence is never persisted. */
+export async function createContextFingerprint(
+  conceptId: string,
+  sentence: string,
+): Promise<string> {
+  const normalized = sentence.normalize('NFC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('fr');
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(`${conceptId}:${normalized}`),
+  );
+  return `ctx_${Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('')}`;
 }

@@ -64,6 +64,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  vi.unstubAllGlobals();
 });
 
 describe('closed', () => {
@@ -93,6 +94,38 @@ describe('state 1 — the question', () => {
     expect(container.querySelector('#eclipse-title')?.getAttribute('lang')).toBe('fr-FR');
   });
 
+  it("speaks the French surface with Fengyuan's pronunciation control", () => {
+    const cancel = vi.fn();
+    const speak = vi.fn();
+    const frenchVoice = { lang: 'fr-FR', localService: true } as SpeechSynthesisVoice;
+    class Utterance {
+      lang = '';
+      rate = 1;
+      voice: SpeechSynthesisVoice | null = null;
+      constructor(readonly text: string) {}
+    }
+    vi.stubGlobal('SpeechSynthesisUtterance', Utterance);
+    vi.stubGlobal('speechSynthesis', {
+      cancel,
+      speak,
+      getVoices: () => [frenchVoice],
+      onvoiceschanged: null,
+    });
+
+    const listen = container.querySelector<HTMLButtonElement>('.eclipse-speak');
+    expect(listen?.getAttribute('aria-label')).toBe('Listen to "attendre" in French');
+    listen?.click();
+
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(speak).toHaveBeenCalledOnce();
+    expect(speak.mock.calls[0]?.[0]).toMatchObject({
+      text: 'attendre',
+      lang: 'fr-FR',
+      rate: 0.95,
+      voice: frenchVoice,
+    });
+  });
+
   it('offers exactly three choices as real buttons', () => {
     const choices = choiceButtons();
     expect(choices).toHaveLength(3);
@@ -100,7 +133,44 @@ describe('state 1 — the question', () => {
       expect(choice.tagName).toBe('BUTTON');
       expect(choice.getAttribute('type')).toBe('button');
     }
-    expect(choices.map((c) => c.textContent)).toEqual(['1wait', '2hope', '3hear']);
+    expect(choices.map((choice) => choice.getAttribute('data-eclipse-choice')).sort()).toEqual([
+      'hear',
+      'hope',
+      'wait',
+    ]);
+  });
+
+  it('does not keep the correct answer in the same position across interactions', () => {
+    const trap = validTrap();
+    const positions = new Set<number>();
+
+    for (let index = 0; index < 24; index += 1) {
+      set({ kind: 'question', trap, interactionId: `int_random_${index}` });
+      positions.add(
+        choiceButtons().findIndex(
+          (button) => button.getAttribute('data-eclipse-choice') === trap.acceptedChoice,
+        ),
+      );
+    }
+
+    expect(positions).toEqual(new Set([0, 1, 2]));
+  });
+
+  it('keeps one interaction order stable from question through grading', () => {
+    const trap = validTrap();
+    const interactionId = 'int_stable_order';
+    set({ kind: 'question', trap, interactionId });
+    const questionOrder = choiceButtons().map((button) =>
+      button.getAttribute('data-eclipse-choice'),
+    );
+
+    set({
+      kind: 'result',
+      result: result({ trap, interactionId, selected: 'hope', correct: false }),
+    });
+    const resultOrder = choiceButtons().map((button) => button.getAttribute('data-eclipse-choice'));
+
+    expect(resultOrder).toEqual(questionOrder);
   });
 
   it('shows the sentence with the French surface in place of the English span', () => {
@@ -111,8 +181,27 @@ describe('state 1 — the question', () => {
   });
 
   it('reports the chosen meaning back to the session', () => {
-    choiceButtons()[1]!.click();
+    choiceButtons()
+      .find((button) => button.getAttribute('data-eclipse-choice') === 'hope')!
+      .click();
     expect(onAnswer).toHaveBeenCalledWith('fr:attendre:wait@0:10', 'hope');
+  });
+
+  it('answers with the displayed choice when 1, 2, or 3 is pressed', () => {
+    const displayed = choiceButtons().map((button) => button.getAttribute('data-eclipse-choice'));
+    container
+      .querySelector('.eclipse-root')!
+      .dispatchEvent(new KeyboardEvent('keydown', { key: '2', bubbles: true, cancelable: true }));
+    expect(onAnswer).toHaveBeenCalledWith('fr:attendre:wait@0:10', displayed[1]);
+  });
+
+  it('does not intercept modified number shortcuts', () => {
+    container
+      .querySelector('.eclipse-root')!
+      .dispatchEvent(
+        new KeyboardEvent('keydown', { key: '1', ctrlKey: true, bubbles: true, cancelable: true }),
+      );
+    expect(onAnswer).not.toHaveBeenCalled();
   });
 
   it('moves focus into the card on open', () => {
@@ -164,7 +253,9 @@ describe('complete phrase translation', () => {
     );
     expect(container.querySelector('.eclipse-question')?.textContent).toContain('whole phrase');
     expect(container.querySelector('.eclipse-sentence mark')?.textContent).toBe('a dû attendre');
-    expect(choiceButtons().map((button) => button.textContent)).toContain('1had to wait');
+    expect(choiceButtons().map((button) => button.getAttribute('data-eclipse-choice'))).toContain(
+      'had to wait',
+    );
   });
 });
 
@@ -189,14 +280,18 @@ describe('state 2 — correct', () => {
     expect(live?.textContent).toContain('wait');
   });
 
-  it('reveals the meaning, the clue, the reason and the distractor', () => {
+  it('reveals the meaning, the reason and the distractor', () => {
     const text = container.textContent ?? '';
     expect(text).toContain('English translation');
-    expect(text).toContain('The clue');
-    expect(container.querySelector('.eclipse-clue')?.textContent).toBe('for the bus');
     expect(text).toContain('attendre is to wait for something.');
     expect(text).toContain('Why not “hope”');
     expect(text).toContain('hope is esperer');
+  });
+
+  it('keeps pronunciation available on the Truth Card', () => {
+    expect(container.querySelector('.eclipse-speak')?.getAttribute('aria-label')).toBe(
+      'Listen to "attendre" in French',
+    );
   });
 
   it('marks each choice with a glyph and a word, not colour alone', () => {

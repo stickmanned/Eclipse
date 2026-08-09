@@ -18,6 +18,8 @@ function successfulResponse(): Response {
           sentence: SENTENCE,
           exactSourceText: 'observed',
           targetSurface: 'observé',
+          choices: ['observed', 'ignored', 'missed'],
+          acceptedChoice: 'observed',
           clueSpan: 'quiet forest',
         }),
       },

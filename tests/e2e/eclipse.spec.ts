@@ -260,7 +260,7 @@ test.describe('3. activating Demo A', () => {
 });
 
 test.describe('4. answering attendre correctly', () => {
-  test('the Truth Card gives meaning, clue, reason, distractor and phase', async ({
+  test('the Truth Card gives meaning, reason, distractor and phase', async ({
     context,
     driver,
     serviceWorker,
@@ -281,7 +281,6 @@ test.describe('4. answering attendre correctly', () => {
 
     await expect(dialog.locator('.eclipse-verdict')).toContainText('Correct');
     await expect(dialog.getByText('English translation')).toBeVisible();
-    await expect(dialog.locator('.eclipse-clue')).toHaveText('for the bus');
     await expect(dialog.getByText(/attendre is to wait/)).toBeVisible();
     await expect(dialog.getByText(/Why not/)).toBeVisible();
     await expect(dialog.locator('.eclipse-phase')).toContainText(
@@ -324,7 +323,7 @@ test.describe('5. wrong answer transfers from Demo A to Demo B', () => {
     const dialog = card(pageA);
     await dialog.getByRole('button', { name: 'hope', exact: true }).click();
     await expect(dialog.locator('.eclipse-verdict')).toContainText('Not this time');
-    await expect(dialog.locator('.eclipse-note')).toContainText(/next time it appears/i);
+    await expect(dialog.locator('.eclipse-note')).toContainText(/Vocab practice/i);
     await dialog.getByRole('button', { name: 'Keep reading' }).click();
 
     const profile = await readProfile(serviceWorker);
@@ -357,7 +356,7 @@ test.describe('5. wrong answer transfers from Demo A to Demo B', () => {
     expect(await tokens(page).count()).toBeGreaterThan(4);
   });
 
-  test('answering the review correctly schedules it a day out', async ({
+  test('answering the review correctly enters the adaptive schedule', async ({
     context,
     driver,
     serviceWorker,
@@ -376,7 +375,7 @@ test.describe('5. wrong answer transfers from Demo A to Demo B', () => {
     await pageB.locator(ATTENDRE).click();
     await card(pageB).getByRole('button', { name: 'wait', exact: true }).click();
 
-    await expect(card(pageB).locator('.eclipse-note')).toContainText(/Review scheduled in 1 day/);
+    await expect(card(pageB).locator('.eclipse-note')).toContainText(/Review scheduled in 2 days/);
 
     const profile = await readProfile(serviceWorker);
     const mastery = (
@@ -547,6 +546,39 @@ test.describe('8b. provider-backed catalog-free articles', () => {
     await stopEclipse(driver);
     await expect(tokens(page)).toHaveCount(0);
     expect(await articleText(page)).toBe(before);
+  });
+
+  test('randomizes correct-answer positions on a Wikipedia-shaped article', async ({
+    context,
+    driver,
+    providerServer,
+  }) => {
+    void providerServer;
+    const page = await context.newPage();
+    await page.goto(`${DEMO_A.replace('demo-a.html', '')}wikipedia-like.html`);
+
+    const started = await startEclipse(driver, page);
+    expect(started.ok, JSON.stringify(started)).toBe(true);
+    const articleTokens = await tokens(page).all();
+    expect(articleTokens.length).toBeGreaterThanOrEqual(12);
+
+    const correctPositions = new Set<number>();
+    for (const token of articleTokens.slice(0, 12)) {
+      await token.click();
+      const dialog = card(page);
+      await expect(dialog).toBeVisible();
+      const choices = dialog.locator('.eclipse-choice');
+      await choices.first().click();
+      correctPositions.add(
+        await choices.evaluateAll((buttons) =>
+          buttons.findIndex((button) => button.getAttribute('data-state') === 'correct'),
+        ),
+      );
+      await dialog.getByRole('button', { name: 'Keep reading' }).click();
+    }
+
+    expect(correctPositions.size).toBeGreaterThan(1);
+    expect(correctPositions).not.toEqual(new Set([0]));
   });
 
   test('verifies news, Wikipedia, and general articles at different DELF levels', async ({

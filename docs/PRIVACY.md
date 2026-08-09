@@ -6,15 +6,15 @@ Eclipse is a study tool. It does not need to know who you are, and it is built s
 
 Eclipse uses four keys in `chrome.storage.local` and one short-lived key in `chrome.storage.session`:
 
-| Key                            | What it holds                                                                                                   |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| `eclipse:profile:v1`           | Your learner profile: per-concept scores, attempt counts, moon phases, review dates, and the last five outcomes |
-| `eclipse:interactions:v1`      | The last 200 answer ids, so a repeated message cannot count twice                                               |
-| `eclipse:provider-cache:v1`    | AI learning-item templates without the full sentence, keyed by a versioned SHA-256 digest                       |
-| `eclipse:provider-settings:v1` | The most recent AI service error, if any                                                                        |
-| `eclipse:session:v1`           | Which tab has a session open. In `storage.session`, so it disappears when the browser closes                    |
+| Key                            | What it holds                                                                                                                 |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `eclipse:profile:v1`           | Your learner profile: per-concept scores, FSRS memory state, moon phases, bounded review evidence, and the last five outcomes |
+| `eclipse:interactions:v1`      | The last 200 answer ids, so a repeated message cannot count twice                                                             |
+| `eclipse:provider-cache:v1`    | AI learning-item templates without the full sentence, keyed by a versioned SHA-256 digest                                     |
+| `eclipse:provider-settings:v1` | The most recent AI service error, if any                                                                                      |
+| `eclipse:session:v1`           | Which tab has a session open. In `storage.session`, so it disappears when the browser closes                                  |
 
-The profile stores **concept identifiers** like `fr:attendre:wait` — not page text, not URLs, not sentences.
+The profile stores **concept identifiers** like `fr:attendre:wait` and SHA-256 context fingerprints — not page text, not URLs, not sentences. A fingerprint lets Eclipse distinguish repeated contexts for learning evidence without putting the source sentence in the profile.
 
 ## What Eclipse does not do
 

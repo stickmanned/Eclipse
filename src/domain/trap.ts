@@ -231,6 +231,12 @@ export function validateTrap(
   if (!value.choices.includes(value.acceptedChoice)) {
     issues.push('acceptedChoice must exactly match one of choices');
   }
+  if (
+    untrusted &&
+    foldForComparison(value.acceptedChoice) !== foldForComparison(value.exactSourceText)
+  ) {
+    issues.push('acceptedChoice must be the original English exactSourceText');
+  }
 
   // --- and every one of them is an English gloss, not a French word ---------
   issues.push(...findChoiceLanguageIssues(value.choices, value.targetSurface));

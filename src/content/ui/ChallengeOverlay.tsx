@@ -40,9 +40,22 @@ export function ChallengeOverlay({ store, onAnswer, onClose }: OverlayProps) {
   if (state.kind === 'closed') return null;
 
   if (state.kind === 'question') {
+    const choices = orderedChoices(state.trap, state.interactionId);
     return (
-      <Dialog onClose={onClose} labelledBy="eclipse-title">
-        <QuestionView trap={state.trap} onAnswer={onAnswer} onClose={onClose} />
+      <Dialog
+        onClose={onClose}
+        labelledBy="eclipse-title"
+        onChoiceShortcut={(index) => {
+          const choice = choices[index];
+          if (choice) onAnswer(state.trap.id, choice);
+        }}
+      >
+        <QuestionView
+          trap={state.trap}
+          interactionId={state.interactionId}
+          onAnswer={onAnswer}
+          onClose={onClose}
+        />
       </Dialog>
     );
   }
@@ -62,9 +75,10 @@ interface DialogProps {
   readonly children: React.ReactNode;
   readonly onClose: () => void;
   readonly labelledBy: string;
+  readonly onChoiceShortcut?: (index: number) => void;
 }
 
-function Dialog({ children, onClose, labelledBy }: DialogProps) {
+function Dialog({ children, onClose, labelledBy, onChoiceShortcut }: DialogProps) {
   const cardRef = useRef<HTMLDivElement>(null);
 
   // Move focus into the card on open, and keep it there.
@@ -81,6 +95,20 @@ function Dialog({ children, onClose, labelledBy }: DialogProps) {
         event.preventDefault();
         event.stopPropagation();
         onClose();
+        return;
+      }
+      if (
+        onChoiceShortcut &&
+        !event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.shiftKey &&
+        !event.repeat &&
+        /^[1-3]$/.test(event.key)
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        onChoiceShortcut(Number(event.key) - 1);
         return;
       }
       if (event.key !== 'Tab') return;
@@ -107,7 +135,7 @@ function Dialog({ children, onClose, labelledBy }: DialogProps) {
         first.focus();
       }
     },
-    [onClose],
+    [onChoiceShortcut, onClose],
   );
 
   return (
@@ -136,19 +164,24 @@ const FOCUSABLE =
 
 interface QuestionProps {
   readonly trap: ContextTrap;
+  readonly interactionId: string;
   readonly onAnswer: (trapId: string, choice: string) => void;
   readonly onClose: () => void;
 }
 
-function QuestionView({ trap, onAnswer, onClose }: QuestionProps) {
+function QuestionView({ trap, interactionId, onAnswer, onClose }: QuestionProps) {
   const kind = learningItemKind(trap);
   const delfLevel = delfLevelForDifficulty(trap.difficulty);
+  const choices = orderedChoices(trap, interactionId);
   return (
     <>
       <header className="eclipse-header">
-        <p className="eclipse-eyebrow">
-          French {kind} <span aria-hidden="true">·</span> DELF {delfLevel}
-        </p>
+        <div className="eclipse-command">
+          <span className="eclipse-command-orbit" aria-hidden="true" />
+          <p className="eclipse-eyebrow">
+            French {kind} <span aria-hidden="true">·</span> DELF {delfLevel}
+          </p>
+        </div>
         <CloseButton onClose={onClose} />
       </header>
 
@@ -160,7 +193,7 @@ function QuestionView({ trap, onAnswer, onClose }: QuestionProps) {
       <Sentence trap={trap} />
 
       <ul className="eclipse-choices">
-        {trap.choices.map((choice, index) => (
+        {choices.map((choice, index) => (
           <li key={choice}>
             <button
               type="button"
@@ -176,6 +209,14 @@ function QuestionView({ trap, onAnswer, onClose }: QuestionProps) {
           </li>
         ))}
       </ul>
+      <div className="eclipse-shortcuts" aria-hidden="true">
+        <span>
+          <kbd>1–3</kbd> answer
+        </span>
+        <span>
+          <kbd>esc</kbd> close
+        </span>
+      </div>
     </>
   );
 }
@@ -206,28 +247,22 @@ function Sentence({ trap }: { readonly trap: ContextTrap }) {
   );
 }
 
-/** The French word/phrase, paired with a button to hear it spoken aloud. */
+/** The French word or phrase, paired with a button to hear it spoken aloud. */
 function SurfaceWord({ text, id }: { readonly text: string; readonly id?: string }) {
   return (
     <div className="eclipse-surface-row">
       <p className="eclipse-surface" lang="fr-FR" id={id}>
         {text}
       </p>
-      <SpeakButton text={text} />
+      <button
+        type="button"
+        className="eclipse-speak"
+        aria-label={`Listen to "${text}" in French`}
+        onClick={() => speakFrench(text)}
+      >
+        <span aria-hidden="true">🔊</span>
+      </button>
     </div>
-  );
-}
-
-function SpeakButton({ text }: { readonly text: string }) {
-  return (
-    <button
-      type="button"
-      className="eclipse-speak"
-      aria-label={`Listen to "${text}" in French`}
-      onClick={() => speakFrench(text)}
-    >
-      <span aria-hidden="true">🔊</span>
-    </button>
   );
 }
 
@@ -256,17 +291,21 @@ interface TruthCardProps {
 }
 
 function TruthCard({ result, onClose }: TruthCardProps) {
-  const { trap, correct, selected } = result;
+  const { trap, interactionId, correct, selected } = result;
   const distractor = primaryDistractor(trap);
   const kind = learningItemKind(trap);
+  const choices = orderedChoices(trap, interactionId);
 
   return (
     <>
       <header className="eclipse-header">
-        <p className="eclipse-eyebrow">
-          {kind === 'phrase' ? 'Phrase translation' : 'Translation'}{' '}
-          <span aria-hidden="true">·</span> DELF {delfLevelForDifficulty(trap.difficulty)}
-        </p>
+        <div className="eclipse-command">
+          <span className="eclipse-command-orbit" aria-hidden="true" />
+          <p className="eclipse-eyebrow">
+            {kind === 'phrase' ? 'Phrase translation' : 'Translation'}{' '}
+            <span aria-hidden="true">·</span> DELF {delfLevelForDifficulty(trap.difficulty)}
+          </p>
+        </div>
       </header>
 
       <p className="eclipse-verdict" data-correct={String(correct)} id="eclipse-title">
@@ -283,32 +322,34 @@ function TruthCard({ result, onClose }: TruthCardProps) {
           : `Incorrect. You chose ${selected}. ${trap.targetSurface} means ${trap.acceptedChoice} here.`}
       </p>
 
-      <SurfaceWord text={trap.targetSurface} />
-
-      <div className="eclipse-section">
-        <p className="eclipse-section-label">English translation</p>
-        <p className="eclipse-section-body">{trap.acceptedChoice}</p>
+      <div className="eclipse-translation-pair">
+        <div>
+          <p className="eclipse-section-label">French</p>
+          <SurfaceWord text={trap.targetSurface} />
+        </div>
+        <span className="eclipse-translation-arrow" aria-hidden="true">
+          →
+        </span>
+        <div>
+          <p className="eclipse-section-label">English translation</p>
+          <p className="eclipse-translation">{trap.acceptedChoice}</p>
+        </div>
       </div>
 
-      <div className="eclipse-section">
-        <p className="eclipse-section-label">The clue</p>
-        <p className="eclipse-section-body">
-          <span className="eclipse-clue">{trap.clueSpan}</span>
-        </p>
-      </div>
+      <div className="eclipse-reason-grid">
+        <div className="eclipse-section" data-kind="why">
+          <p className="eclipse-section-label">Why it fits</p>
+          <p className="eclipse-section-body">{trap.explanation}</p>
+        </div>
 
-      <div className="eclipse-section">
-        <p className="eclipse-section-label">Why</p>
-        <p className="eclipse-section-body">{trap.explanation}</p>
-      </div>
-
-      <div className="eclipse-section">
-        <p className="eclipse-section-label">Why not “{distractor}”</p>
-        <p className="eclipse-section-body">{trap.distractorExplanation}</p>
+        <div className="eclipse-section" data-kind="why-not">
+          <p className="eclipse-section-label">Why not “{distractor}”</p>
+          <p className="eclipse-section-body">{trap.distractorExplanation}</p>
+        </div>
       </div>
 
       <ul className="eclipse-choices" aria-label="Your answer">
-        {trap.choices.map((choice) => {
+        {choices.map((choice) => {
           const state =
             choice === trap.acceptedChoice
               ? 'correct'
@@ -317,7 +358,13 @@ function TruthCard({ result, onClose }: TruthCardProps) {
                 : undefined;
           return (
             <li key={choice}>
-              <button type="button" className="eclipse-choice" data-state={state} disabled>
+              <button
+                type="button"
+                className="eclipse-choice"
+                data-eclipse-choice={choice}
+                data-state={state}
+                disabled
+              >
                 <span className="eclipse-choice-key" aria-hidden="true">
                   {state === 'correct' ? '✓' : state === 'incorrect' ? '✕' : ''}
                 </span>
@@ -341,6 +388,28 @@ function TruthCard({ result, onClose }: TruthCardProps) {
       </div>
     </>
   );
+}
+
+const CHOICE_PERMUTATIONS = [
+  [0, 1, 2],
+  [0, 2, 1],
+  [1, 0, 2],
+  [1, 2, 0],
+  [2, 0, 1],
+  [2, 1, 0],
+] as const;
+
+/** Stable per interaction, varied across interactions, and independent of render timing. */
+function orderedChoices(trap: ContextTrap, interactionId: string): ContextTrap['choices'] {
+  let hash = 0x811c9dc5;
+  const key = `${interactionId}:${trap.id}`;
+  for (let index = 0; index < key.length; index += 1) {
+    hash ^= key.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+
+  const permutation = CHOICE_PERMUTATIONS[(hash >>> 0) % CHOICE_PERMUTATIONS.length]!;
+  return [trap.choices[permutation[0]], trap.choices[permutation[1]], trap.choices[permutation[2]]];
 }
 
 function markFor(state: 'correct' | 'incorrect', wasSelected: boolean): string {

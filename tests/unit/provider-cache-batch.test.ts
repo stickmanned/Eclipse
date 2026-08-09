@@ -31,6 +31,8 @@ function trapFor(index: number) {
     sentence: sentenceText(index),
     exactSourceText: 'observed',
     targetSurface: 'observé',
+    choices: ['observed', 'ignored', 'missed'],
+    acceptedChoice: 'observed',
     clueSpan: 'quiet forest',
   });
 }

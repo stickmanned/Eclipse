@@ -6,29 +6,109 @@
 import { z } from 'zod';
 import { CONCEPT_ID_PATTERN, type ConceptId } from './trap';
 import { DELF_LEVELS, type DelfLevel } from './delf';
+import { retrievabilityOf } from './scheduling';
 
-export const PROFILE_SCHEMA_VERSION = 1;
+export const PROFILE_SCHEMA_VERSION = 2;
 
 /** Most concept records retained. Oldest-updated entries are evicted first. */
 export const MAX_CONCEPT_RECORDS = 500;
 
 /** Length of the rolling outcome window kept on the profile. */
 export const RECENT_OUTCOMES_LIMIT = 5;
+export const REVIEW_EVENT_LIMIT = 40;
+export const SUCCESSFUL_REVIEW_DAY_LIMIT = 366;
+export const CONTEXT_FINGERPRINT_LIMIT = 80;
 
 export const MOON_PHASES = ['new_moon', 'crescent', 'half', 'full'] as const;
 export type MoonPhase = (typeof MOON_PHASES)[number];
+export const LEARNING_PHASES = ['crescent', 'half', 'full'] as const;
+export type LearningPhase = (typeof LEARNING_PHASES)[number];
 
 export type DueState =
   { kind: 'none' } | { kind: 'next_occurrence' } | { kind: 'timestamp'; at: string };
 
+/** JSON-safe subset of the pinned ts-fsrs Card. */
+export interface FsrsCardState {
+  due: string;
+  stability: number;
+  difficulty: number;
+  elapsedDays: number;
+  scheduledDays: number;
+  learningSteps: number;
+  reps: number;
+  lapses: number;
+  state: 0 | 1 | 2 | 3;
+  lastReview?: string;
+}
+
+export type ReviewMode = 'context-choice' | 'typed-meaning' | 'bare-recall';
+export type SchedulerRating = 'again' | 'hard' | 'good';
+
+export interface ReviewEvent {
+  interactionId: string;
+  reviewedAt: string;
+  correct: boolean;
+  assisted: boolean;
+  mode: ReviewMode;
+  scheduled: boolean;
+  schedulerRating: SchedulerRating;
+  contextFingerprint?: string;
+}
+
 export interface ConceptMastery {
   /** -2 through 2. Higher means the learner reads this concept reliably. */
   score: number;
-  phase: MoonPhase;
+  /** Learner-facing strength. Attempted concepts always start at Crescent. */
+  phase: LearningPhase;
   attempts: number;
   correct: number;
+  /** Current durable review interval. Early practice never increases it. */
+  intervalDays: number;
+  /** Correct typed-meaning practices; 1 earns Half Moon and 3 earn Full Moon. */
+  unassistedCorrect: number;
+  /** Incorrect recalls. Kept for relearning and future scheduler tuning. */
+  lapses: number;
+  fsrsCard: FsrsCardState;
+  firstAnsweredAt: string;
+  /** UTC calendar days with a qualifying unassisted recall. */
+  successfulReviewDays: string[];
+  /** Bounded distinct hashes retained even after individual events are pruned. */
+  contextFingerprints: string[];
+  /** Bounded evidence/history for phase gates and future migrations. */
+  reviewEvents: ReviewEvent[];
+  /** Migrated v1 label; cleared and revalidated on the next answer. */
+  legacyPhase?: boolean;
   due: DueState;
-  /** ISO-8601. Also the anchor used to derive the current review interval. */
+  /** ISO-8601 timestamp of the most recent answer. */
+  updatedAt: string;
+  /** Last validated learner-facing copy for the vocabulary deck. */
+  display?: VocabularyDisplay;
+}
+
+export interface VocabularyDisplay {
+  targetSurface: string;
+  englishMeaning: string;
+  kind: 'word' | 'phrase';
+}
+
+export interface VocabularyItem extends VocabularyDisplay {
+  conceptId: string;
+  phase: LearningPhase;
+  attempts: number;
+  correct: number;
+  intervalDays: number;
+  unassistedCorrect: number;
+  lapses: number;
+  stability: number;
+  retrievability: number;
+  successfulReviewDays: string[];
+  /** Distinct privacy-preserving article contexts seen for this concept. */
+  contextCount: number;
+  /** Retained for message compatibility; simplified mastery never dims. */
+  memoryDimmed: boolean;
+  /** A pre-v2 Half/Full label awaiting evidence-based revalidation. */
+  legacyPhase?: boolean;
+  due: DueState;
   updatedAt: string;
 }
 
@@ -62,13 +142,55 @@ export const dueStateSchema: z.ZodType<DueState> = z.union([
   z.object({ kind: z.literal('timestamp'), at: isoDate }),
 ]);
 
+export const fsrsCardStateSchema: z.ZodType<FsrsCardState> = z.object({
+  due: isoDate,
+  stability: z.number().min(0),
+  difficulty: z.number().min(0).max(10),
+  elapsedDays: z.number().min(0),
+  scheduledDays: z.number().min(0),
+  learningSteps: z.number().min(0),
+  reps: z.number().int().min(0),
+  lapses: z.number().int().min(0),
+  state: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
+  lastReview: isoDate.optional(),
+});
+
+export const reviewEventSchema: z.ZodType<ReviewEvent> = z.object({
+  interactionId: z.string().min(1).max(120),
+  reviewedAt: isoDate,
+  correct: z.boolean(),
+  assisted: z.boolean(),
+  mode: z.enum(['context-choice', 'typed-meaning', 'bare-recall']),
+  scheduled: z.boolean(),
+  schedulerRating: z.enum(['again', 'hard', 'good']),
+  contextFingerprint: z.string().min(1).max(120).optional(),
+});
+
 export const conceptMasterySchema = z.object({
   score: z.number().min(-2).max(2),
-  phase: z.enum(MOON_PHASES),
+  phase: z.enum(LEARNING_PHASES),
   attempts: z.number().int().min(0),
   correct: z.number().int().min(0),
+  intervalDays: z.number().min(0).max(365),
+  unassistedCorrect: z.number().int().min(0),
+  lapses: z.number().int().min(0),
+  fsrsCard: fsrsCardStateSchema,
+  firstAnsweredAt: isoDate,
+  successfulReviewDays: z
+    .array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/))
+    .max(SUCCESSFUL_REVIEW_DAY_LIMIT),
+  contextFingerprints: z.array(z.string().min(1).max(120)).max(CONTEXT_FINGERPRINT_LIMIT),
+  reviewEvents: z.array(reviewEventSchema).max(REVIEW_EVENT_LIMIT),
+  legacyPhase: z.boolean().optional(),
   due: dueStateSchema,
   updatedAt: isoDate,
+  display: z
+    .object({
+      targetSurface: z.string().trim().min(1).max(120),
+      englishMeaning: z.string().trim().min(1).max(240),
+      kind: z.enum(['word', 'phrase']),
+    })
+    .optional(),
 });
 
 export const answerOutcomeSchema = z.object({
@@ -109,9 +231,27 @@ export function createEmptyProfile(): LearnerProfile {
 export function emptyMastery(now: Date): ConceptMastery {
   return {
     score: 0,
-    phase: 'new_moon',
+    phase: 'crescent',
     attempts: 0,
     correct: 0,
+    intervalDays: 0,
+    unassistedCorrect: 0,
+    lapses: 0,
+    fsrsCard: {
+      due: now.toISOString(),
+      stability: 0,
+      difficulty: 0,
+      elapsedDays: 0,
+      scheduledDays: 0,
+      learningSteps: 0,
+      reps: 0,
+      lapses: 0,
+      state: 0,
+    },
+    firstAnsweredAt: now.toISOString(),
+    successfulReviewDays: [],
+    contextFingerprints: [],
+    reviewEvents: [],
     due: { kind: 'none' },
     updatedAt: now.toISOString(),
   };
@@ -148,14 +288,13 @@ export interface MasterySummary {
   attempts: number;
   correct: number;
   due: number;
-  byPhase: Record<MoonPhase, number>;
+  byPhase: Record<LearningPhase, number>;
   /** The learner's overall phase, derived from their strongest sustained work. */
   overallPhase: MoonPhase;
 }
 
 export function summarizeMastery(profile: LearnerProfile, now: Date): MasterySummary {
-  const byPhase: Record<MoonPhase, number> = {
-    new_moon: 0,
+  const byPhase: Record<LearningPhase, number> = {
     crescent: 0,
     half: 0,
     full: 0,
@@ -167,9 +306,10 @@ export function summarizeMastery(profile: LearnerProfile, now: Date): MasterySum
   const records = Object.values(profile.mastery);
 
   for (const record of records) {
-    byPhase[record.phase] += 1;
+    byPhase[displayedPhase(record, now)] += 1;
     attempts += record.attempts;
     correct += record.correct;
+    if (record.phase === 'full') continue;
     if (record.due.kind === 'next_occurrence') due += 1;
     else if (record.due.kind === 'timestamp' && Date.parse(record.due.at) <= now.getTime())
       due += 1;
@@ -186,16 +326,68 @@ export function summarizeMastery(profile: LearnerProfile, now: Date): MasterySum
 }
 
 /**
+ * Bounded learner-facing vocabulary rows for the popup.
+ *
+ * Records created before display metadata existed remain useful: the stable
+ * concept id supplies a plain fallback until the learner sees the item again.
+ */
+export function vocabularyItems(profile: LearnerProfile, now = new Date()): VocabularyItem[] {
+  return Object.entries(profile.mastery)
+    .map(([conceptId, mastery]) => {
+      const [, surface = conceptId, meaning = 'Meaning unavailable'] = conceptId.split(':');
+      const phase = displayedPhase(mastery, now);
+      const retrievability = retrievabilityOf(mastery, now);
+      return {
+        conceptId,
+        targetSurface: mastery.display?.targetSurface ?? surface.replaceAll('-', ' '),
+        englishMeaning: mastery.display?.englishMeaning ?? meaning.replaceAll('-', ' '),
+        kind: mastery.display?.kind ?? 'word',
+        phase,
+        attempts: mastery.attempts,
+        correct: mastery.correct,
+        intervalDays: mastery.intervalDays,
+        unassistedCorrect: mastery.unassistedCorrect,
+        lapses: mastery.lapses,
+        stability: mastery.fsrsCard.stability,
+        retrievability,
+        successfulReviewDays: mastery.successfulReviewDays,
+        contextCount: mastery.contextFingerprints.length,
+        memoryDimmed: false,
+        legacyPhase: mastery.legacyPhase,
+        due: mastery.due,
+        updatedAt: mastery.updatedAt,
+      } satisfies VocabularyItem;
+    })
+    .sort((left, right) => {
+      const phaseOrder: Record<LearningPhase, number> = {
+        crescent: 0,
+        half: 1,
+        full: 2,
+      };
+      const byPhase = phaseOrder[left.phase] - phaseOrder[right.phase];
+      if (byPhase !== 0) return byPhase;
+      const byUpdated = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+      if (byUpdated !== 0) return byUpdated;
+      return left.targetSurface.localeCompare(right.targetSurface, 'fr');
+    });
+}
+
+function displayedPhase(mastery: ConceptMastery, now: Date): LearningPhase {
+  void now;
+  return mastery.phase;
+}
+
+/**
  * The single phase shown in the popup. It reflects the median concept rather
  * than the best one, so the moon does not jump to full after a single win.
  */
-function overallPhaseFrom(byPhase: Record<MoonPhase, number>, total: number): MoonPhase {
+function overallPhaseFrom(byPhase: Record<LearningPhase, number>, total: number): MoonPhase {
   if (total === 0) return 'new_moon';
-  const ordered: MoonPhase[] = ['full', 'half', 'crescent', 'new_moon'];
+  const ordered: LearningPhase[] = ['full', 'half', 'crescent'];
   let seen = 0;
   for (const phase of ordered) {
     seen += byPhase[phase];
     if (seen * 2 >= total) return phase;
   }
-  return 'new_moon';
+  return 'crescent';
 }
