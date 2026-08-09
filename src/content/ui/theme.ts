@@ -116,8 +116,15 @@ export const OVERLAY_CSS = `
 
 .eclipse-close:hover { color: #FFFFFF; border-color: var(--eclipse-gold); background: rgba(139, 92, 246, 0.2); }
 
-.eclipse-surface {
+.eclipse-surface-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin: 0 0 8px;
+}
+
+.eclipse-surface {
+  margin: 0;
   font-size: 30px;
   font-weight: 700;
   letter-spacing: -0.01em;
@@ -125,6 +132,30 @@ export const OVERLAY_CSS = `
   text-shadow: 0 2px 8px rgba(247, 201, 72, 0.25);
   overflow-wrap: anywhere;
 }
+
+.eclipse-speak {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(139, 92, 246, 0.18);
+  color: var(--eclipse-gold);
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  border-radius: 10px;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
+}
+
+.eclipse-speak:hover {
+  background: rgba(139, 92, 246, 0.3);
+  border-color: var(--eclipse-gold);
+}
+
+.eclipse-speak:active { transform: scale(0.94); }
 
 .eclipse-question {
   margin: 0 0 16px;

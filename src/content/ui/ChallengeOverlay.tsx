@@ -21,6 +21,7 @@ import type { ContextTrap } from '../../domain/trap';
 import { learningItemKind, primaryDistractor } from '../../domain/trap';
 import { delfLevelForDifficulty } from '../../domain/delf';
 import { Moon, PHASE_DESCRIPTION, PHASE_LABEL } from './Moon';
+import { speakFrench } from './speak-french';
 
 const CHOICE_KEYS = ['1', '2', '3'] as const;
 
@@ -151,9 +152,7 @@ function QuestionView({ trap, onAnswer, onClose }: QuestionProps) {
         <CloseButton onClose={onClose} />
       </header>
 
-      <p className="eclipse-surface" lang="fr-FR" id="eclipse-title">
-        {trap.targetSurface}
-      </p>
+      <SurfaceWord text={trap.targetSurface} id="eclipse-title" />
       <p className="eclipse-question">
         What does this {kind === 'phrase' ? 'whole phrase' : 'word'} mean here?
       </p>
@@ -204,6 +203,31 @@ function Sentence({ trap }: { readonly trap: ContextTrap }) {
       <mark lang="fr-FR">{trap.targetSurface}</mark>
       {after}
     </p>
+  );
+}
+
+/** The French word/phrase, paired with a button to hear it spoken aloud. */
+function SurfaceWord({ text, id }: { readonly text: string; readonly id?: string }) {
+  return (
+    <div className="eclipse-surface-row">
+      <p className="eclipse-surface" lang="fr-FR" id={id}>
+        {text}
+      </p>
+      <SpeakButton text={text} />
+    </div>
+  );
+}
+
+function SpeakButton({ text }: { readonly text: string }) {
+  return (
+    <button
+      type="button"
+      className="eclipse-speak"
+      aria-label={`Listen to "${text}" in French`}
+      onClick={() => speakFrench(text)}
+    >
+      <span aria-hidden="true">🔊</span>
+    </button>
   );
 }
 
@@ -259,9 +283,7 @@ function TruthCard({ result, onClose }: TruthCardProps) {
           : `Incorrect. You chose ${selected}. ${trap.targetSurface} means ${trap.acceptedChoice} here.`}
       </p>
 
-      <p className="eclipse-surface" lang="fr-FR">
-        {trap.targetSurface}
-      </p>
+      <SurfaceWord text={trap.targetSurface} />
 
       <div className="eclipse-section">
         <p className="eclipse-section-label">English translation</p>
