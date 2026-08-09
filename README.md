@@ -82,5 +82,5 @@ See [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) for a proposed runthrough scrip
 ---
 
 ## Happy learning!
-Art by Michael
+*Art by Michael*
 <img src="/src/README_src/Eclipse_bloodmoon.jpg">
