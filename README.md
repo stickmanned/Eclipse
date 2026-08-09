@@ -24,6 +24,12 @@ The other learning mode which Eclipse offers, Paraphrase mode, provides the View
 
 ---
 
+## Video walkthrough
+
+See [here](https://youtu.be/j-cHfa5xX30)
+
+---
+
 ## Quick start
 
 ```bash
@@ -46,13 +52,6 @@ npm run demo
 Open <http://127.0.0.1:4321/demo-a.html>, click the Eclipse toolbar icon, and press **Start Eclipse**.
 
 There is no account or extension-side API key. Start the loopback AI service with `npm run api`; the keys are set using .env
-
-
----
-
-## Video walkthrough
-
-See [here](https://youtu.be/j-cHfa5xX30)
 
 ---
 
