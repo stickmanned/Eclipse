@@ -18,6 +18,8 @@ import {
 import { STALE_WORKER_MESSAGE, type Result } from '../../domain/errors';
 import { unsupportedReasonText } from '../../domain/url-support';
 import { Moon, PHASE_DESCRIPTION, PHASE_LABEL } from '../../content/ui/Moon';
+import { OrbitLogo } from '../../content/ui/OrbitLogo';
+import { OrbitRing } from '../../content/ui/OrbitRing';
 import { LEARNING_PHASES, type LearningPhase, type VocabularyItem } from '../../domain/profile';
 import { createInteractionId } from '../../domain/ids';
 import {
@@ -405,11 +407,16 @@ function SessionView({
     <div className="view-stack session-view">
       <section className="session-hero" data-active={String(active)}>
         <div className="session-orbit" aria-hidden="true">
-          <span className="orbit-track" />
           {(summary?.tracked ?? 0) > 0 ? (
-            <Moon phase={status?.phase ?? 'crescent'} size={76} />
+            <>
+              <OrbitRing layer="back" />
+              <span className="session-orbit-moon">
+                <Moon phase={status?.phase ?? 'crescent'} size={76} />
+              </span>
+              <OrbitRing layer="front" />
+            </>
           ) : (
-            <span className="empty-session-orbit" />
+            <OrbitLogo size={88} />
           )}
         </div>
         <div className="session-copy">

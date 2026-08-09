@@ -425,32 +425,18 @@ button {
   height: 88px;
 }
 
-.orbit-track {
+.session-orbit-ring {
   position: absolute;
-  inset: 4px;
-  border: 1px solid var(--ec-gold-line);
-  border-radius: 50%;
-  transform: rotate(-18deg) scaleY(0.44);
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
-.orbit-track::after {
-  content: '';
-  position: absolute;
-  width: 7px;
-  height: 7px;
-  top: 50%;
-  right: -3px;
-  border-radius: 50%;
-  background: var(--ec-gold);
-  box-shadow: var(--ec-shadow-gold);
-}
-
-.empty-session-orbit {
-  width: 54px;
-  height: 54px;
-  border: 2px solid var(--ec-gold);
-  border-radius: 50%;
-  box-shadow: var(--ec-shadow-gold);
+.session-orbit-moon {
+  position: relative;
+  display: grid;
+  place-items: center;
 }
 
 .session-copy {
